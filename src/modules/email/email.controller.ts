@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { EmailService } from './email.service';
+import { EmailService } from '../../shared/services/email.service';
 
 const emailService = new EmailService();
 

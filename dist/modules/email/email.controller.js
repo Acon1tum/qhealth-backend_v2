@@ -10,7 +10,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendEmail = void 0;
-const email_service_1 = require("./email.service");
+const email_service_1 = require("../../shared/services/email.service");
 const emailService = new email_service_1.EmailService();
 const sendEmail = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {

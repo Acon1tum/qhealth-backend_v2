@@ -29,6 +29,12 @@ model User {
   doctorSchedules   DoctorSchedule[]
   emergencyContacts EmergencyContact[]
   insuranceInfos    InsuranceInfo[]
+  refreshTokens     RefreshToken[] // Refresh tokens for JWT authentication
+  
+  // Security and audit relations
+  auditLogs              AuditLog[] // Audit logs for this user
+  securityEvents         SecurityEvent[] // Security events for this user
+  resolvedSecurityEvents SecurityEvent[] @relation("ResolvedSecurityEvents") // Security events resolved by this user
 }
 
 // Enum for different user roles
@@ -187,4 +193,86 @@ model InsuranceInfo {
 
   patient     User        @relation(fields: [patientId], references: [id], map: "InsuranceInfo_patient_fkey") // Relation to Patient
   patientInfo PatientInfo @relation(fields: [patientId], references: [userId]) // Relation to PatientInfo
+}
+
+// Refresh Token model for JWT refresh tokens
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    Int      // Foreign key to User
+  token     String   @unique // The actual refresh token string
+  expiresAt DateTime // When the token expires
+  createdAt DateTime @default(now()) // When the token was created
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("refresh_tokens")
+}
+
+// Audit Log model for comprehensive activity tracking
+model AuditLog {
+  id           String         @id @default(uuid())
+  userId       Int? // Foreign key to User (nullable for system events)
+  action       String // Action performed (e.g., LOGIN, CREATE, UPDATE, DELETE)
+  category     AuditCategory // Category of the audit log
+  level        AuditLevel // Severity level of the audit log
+  description  String // Human-readable description of the action
+  ipAddress    String // IP address of the user
+  userAgent    String // User agent string
+  resourceType String? // Type of resource affected (e.g., USER, CONSULTATION)
+  resourceId   String? // ID of the resource affected
+  details      Json? // Additional details in JSON format
+  timestamp    DateTime @default(now()) // When the action occurred
+  severity     String // Severity level as string (low, medium, high, critical)
+  
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([timestamp])
+  @@index([category])
+  @@index([level])
+  @@map("audit_logs")
+}
+
+// Security Event model for tracking security-related incidents
+model SecurityEvent {
+  id          String     @id @default(uuid())
+  eventType   String // Type of security event (e.g., AUTH_FAILURE, RATE_LIMIT_VIOLATION)
+  severity    AuditLevel // Severity level of the security event
+  description String // Description of the security event
+  ipAddress   String // IP address associated with the event
+  userAgent   String // User agent string
+  userId      Int? // Foreign key to User (nullable for anonymous events)
+  details     Json? // Additional details in JSON format
+  timestamp   DateTime @default(now()) // When the event occurred
+  resolved    Boolean @default(false) // Whether the security event has been resolved
+  resolvedAt  DateTime? // When the event was resolved
+  resolvedBy  Int? // User who resolved the event
+  
+  user       User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  resolvedByUser User? @relation("ResolvedSecurityEvents", fields: [resolvedBy], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([timestamp])
+  @@index([eventType])
+  @@index([severity])
+  @@index([resolved])
+  @@map("security_events")
+}
+
+// Enums for audit logging
+enum AuditCategory {
+  AUTHENTICATION
+  AUTHORIZATION
+  DATA_ACCESS
+  DATA_MODIFICATION
+  SECURITY
+  SYSTEM
+  USER_ACTIVITY
+}
+
+enum AuditLevel {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
 }
