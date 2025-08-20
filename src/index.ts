@@ -12,10 +12,12 @@ import { securityConfig } from './config/security.config';
 
 // Import modules
 import { emailRoutes } from './modules/email/email.routes';
+import authRoutes from './modules/auth/auth.routes';
 
 // Import middleware
 import { errorHandler, notFoundHandler } from './shared/middleware/error-handler';
 import { sanitizeInput, xssProtection, sqlInjectionProtection } from './utils/validation';
+import { authenticateToken, requireAuth } from './shared/middleware/auth-middleware';
 
 // Import types
 import { Request, Response, NextFunction } from 'express';
@@ -135,7 +137,21 @@ app.get('/security-status', (req: Request, res: Response) => {
   });
 });
 
+// Protected admin endpoint (demonstrates auth middleware)
+app.get('/admin/security-audit', authenticateToken, requireAuth, (req: Request, res: Response) => {
+  res.status(200).json({
+    success: true,
+    message: 'Admin access granted',
+    data: {
+      user: (req as any).user,
+      timestamp: new Date().toISOString(),
+      securityLevel: 'admin',
+    },
+  });
+});
+
 // API Routes with security middleware
+app.use('/api/auth', authRoutes);
 app.use('/api/email', emailRoutes);
 
 // Serve static files with enhanced security

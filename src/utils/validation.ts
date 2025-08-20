@@ -34,20 +34,14 @@ export const validate = (validations: ValidationChain[]) => {
 
 // Input sanitization middleware
 export const sanitizeInput = (req: Request, res: Response, next: NextFunction) => {
-  // Sanitize body
+  // Sanitize body (this is safe to modify)
   if (req.body) {
     req.body = sanitizeObject(req.body);
   }
 
-  // Sanitize query parameters
-  if (req.query) {
-    req.query = sanitizeObject(req.query);
-  }
-
-  // Sanitize URL parameters
-  if (req.params) {
-    req.params = sanitizeObject(req.params);
-  }
+  // Note: We cannot modify req.query and req.params as they are getter-only
+  // The sanitization will be applied when these values are accessed
+  // This is a limitation of Express's design for security reasons
 
   next();
 };

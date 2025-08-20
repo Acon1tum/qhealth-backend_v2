@@ -154,8 +154,8 @@ const logError = (error: AppError, req: Request): void => {
     method: req.method,
     stack: securityConfig.isDevelopment ? error.stack : undefined,
     body: securityConfig.isDevelopment ? req.body : undefined,
-    query: securityConfig.isDevelopment ? req.query : undefined,
-    params: securityConfig.isDevelopment ? req.params : undefined,
+    query: securityConfig.isDevelopment ? Object.assign({}, req.query) : undefined,
+    params: securityConfig.isDevelopment ? Object.assign({}, req.params) : undefined,
   };
 
   // Log to console in development

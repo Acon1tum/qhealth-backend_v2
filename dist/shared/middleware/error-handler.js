@@ -108,8 +108,8 @@ const logError = (error, req) => {
         method: req.method,
         stack: security_config_1.securityConfig.isDevelopment ? error.stack : undefined,
         body: security_config_1.securityConfig.isDevelopment ? req.body : undefined,
-        query: security_config_1.securityConfig.isDevelopment ? req.query : undefined,
-        params: security_config_1.securityConfig.isDevelopment ? req.params : undefined,
+        query: security_config_1.securityConfig.isDevelopment ? Object.assign({}, req.query) : undefined,
+        params: security_config_1.securityConfig.isDevelopment ? Object.assign({}, req.params) : undefined,
     };
     // Log to console in development
     if (security_config_1.securityConfig.isDevelopment) {

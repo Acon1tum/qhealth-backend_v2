@@ -48,9 +48,11 @@ const path_1 = __importDefault(require("path"));
 const security_config_1 = require("./config/security.config");
 // Import modules
 const email_routes_1 = require("./modules/email/email.routes");
+const auth_routes_1 = __importDefault(require("./modules/auth/auth.routes"));
 // Import middleware
 const error_handler_1 = require("./shared/middleware/error-handler");
 const validation_1 = require("./utils/validation");
+const auth_middleware_1 = require("./shared/middleware/auth-middleware");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 // Trust proxy configuration for load balancers
@@ -157,7 +159,20 @@ app.get('/security-status', (req, res) => {
         },
     });
 });
+// Protected admin endpoint (demonstrates auth middleware)
+app.get('/admin/security-audit', auth_middleware_1.authenticateToken, auth_middleware_1.requireAuth, (req, res) => {
+    res.status(200).json({
+        success: true,
+        message: 'Admin access granted',
+        data: {
+            user: req.user,
+            timestamp: new Date().toISOString(),
+            securityLevel: 'admin',
+        },
+    });
+});
 // API Routes with security middleware
+app.use('/api/auth', auth_routes_1.default);
 app.use('/api/email', email_routes_1.emailRoutes);
 // Serve static files with enhanced security
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads'), {
