@@ -343,3 +343,9 @@ Regular security training should cover:
 ---
 
 **Remember**: Security is an ongoing process, not a one-time implementation. Regular reviews, updates, and monitoring are essential for maintaining a secure application.
+
+
+
+note:
+in security.config.ts
+change this code to       ? process.env.ALLOWED_ORIGINS?.split(',') || ['https://yourdomain.com'] to the proper domain for frontend
