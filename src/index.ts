@@ -6,6 +6,10 @@ import compression from 'compression';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
+
+// Load environment variables first
+dotenv.config();
 
 // Import security configuration
 import { securityConfig } from './config/security.config';
@@ -25,8 +29,6 @@ import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { Role } from '@prisma/client';
-
-dotenv.config();
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -107,6 +109,16 @@ app.use(sanitizeInput);
 // Request size limits
 app.use(express.json({ limit: securityConfig.requestLimits.json }));
 app.use(express.urlencoded({ extended: true, limit: securityConfig.requestLimits.urlencoded }));
+
+// Root endpoint for basic connectivity test
+app.get('/', (req: Request, res: Response) => {
+  res.status(200).json({
+    message: 'QHealth Backend API is running',
+    timestamp: new Date().toISOString(),
+    environment: securityConfig.environment,
+    version: process.env.npm_package_version || '1.0.0',
+  });
+});
 
 // Health check endpoint with security headers
 app.get('/health', (req: Request, res: Response) => {
@@ -366,8 +378,17 @@ process.on('uncaughtException', (error) => {
 
 const PORT = process.env.PORT || 3000;
 
+// Log environment information
+console.log('🔧 Environment Variables:');
+console.log('   NODE_ENV:', process.env.NODE_ENV);
+console.log('   PORT:', process.env.PORT);
+console.log('   Using PORT:', PORT);
+console.log('   PWD:', process.cwd());
+console.log('   Files in current directory:', fs.readdirSync('.'));
+
 httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 Server bound to port ${PORT}`);
   console.log(`📊 Environment: ${securityConfig.environment}`);
   console.log(`🛡️ Security features enabled:`);
   console.log(`   - CORS: ${securityConfig.cors.origin.length > 0 ? 'Yes' : 'No'}`);
@@ -375,4 +396,15 @@ httpServer.listen(PORT, () => {
   console.log(`   - Password Policy: Min ${securityConfig.password.minLength} chars`);
   console.log(`   - JWT Expiration: ${securityConfig.jwt.accessToken.expiresIn}`);
   console.log(`   - Session Timeout: ${securityConfig.session.inactivityTimeout / 60000} minutes`);
+});
+
+// Add error handling for the server
+httpServer.on('error', (error: any) => {
+  console.error('🚨 Server error:', error);
+  if (error.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use`);
+  } else if (error.code === 'EACCES') {
+    console.error(`❌ Permission denied to bind to port ${PORT}`);
+  }
+  process.exit(1);
 });
