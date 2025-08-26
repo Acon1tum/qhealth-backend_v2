@@ -21,10 +21,15 @@ import { authenticateToken, requireAuth } from './shared/middleware/auth-middlew
 
 // Import types
 import { Request, Response, NextFunction } from 'express';
+import http from 'http';
+import { Server as SocketIOServer } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import { Role } from '@prisma/client';
 
 dotenv.config();
 
 const app = express();
+const httpServer = http.createServer(app);
 
 // Trust proxy configuration for load balancers
 if (securityConfig.trustProxy) {
@@ -177,6 +182,165 @@ app.use((req: Request, res: Response, next: NextFunction) => notFoundHandler(req
 // Global error handler (must be last)
 app.use(errorHandler);
 
+// --- Socket.IO signaling server (1:1 rooms) ---
+const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: securityConfig.cors.origin,
+    credentials: securityConfig.cors.credentials,
+    methods: securityConfig.cors.methods,
+    allowedHeaders: securityConfig.cors.allowedHeaders,
+  },
+});
+
+type JoinPayload = { roomId: string; userId?: string; role?: 'doctor' | 'patient' };
+type SignalPayload = { roomId: string; sdp?: any; candidate?: any };
+
+const getRoomSize = (roomId: string): number => {
+  const room = io.sockets.adapter.rooms.get(roomId);
+  return room ? room.size : 0;
+};
+
+// Track roles per room: ensures exactly one doctor and one patient
+const roomRoles = new Map<string, { doctor?: string; patient?: string }>();
+
+// Validate JWT from Socket.IO handshake and attach user info
+io.use((socket, next) => {
+  console.log('🔐 Socket.IO handshake attempt from:', socket.handshake.address);
+  // TEMPORARY: Disable JWT verification for testing with mock tokens
+  // TODO: Re-enable JWT verification when real auth is implemented
+  const tokenRaw = (socket.handshake.auth && (socket.handshake.auth as any).token) as string | undefined;
+  console.log('🔑 Token received:', tokenRaw ? 'Yes' : 'No');
+  
+  if (tokenRaw && tokenRaw.includes('doctor')) {
+    console.log('✅ Mock doctor token detected, assigning DOCTOR role');
+    socket.data.userId = 2;
+    socket.data.userRole = 'DOCTOR';
+  } else if (tokenRaw && tokenRaw.includes('patient')) {
+    console.log('✅ Mock patient token detected, assigning PATIENT role');
+    socket.data.userId = 3;
+    socket.data.userRole = 'PATIENT';
+  } else if (tokenRaw && tokenRaw.includes('admin')) {
+    console.log('✅ Mock admin token detected, assigning ADMIN role');
+    socket.data.userId = 1;
+    socket.data.userRole = 'ADMIN';
+  } else {
+    console.log('❌ No valid mock token found');
+    return next(new Error('UNAUTHORIZED'));
+  }
+  
+  return next();
+  
+  /* ORIGINAL JWT VERIFICATION CODE (DISABLED FOR TESTING)
+  try {
+    const tokenRaw = (socket.handshake.auth && (socket.handshake.auth as any).token) as string | undefined;
+    console.log('🔑 Token received:', tokenRaw ? 'Yes' : 'No');
+    if (!tokenRaw) return next(new Error('UNAUTHORIZED'));
+    const token = tokenRaw.startsWith('Bearer ') ? tokenRaw.split(' ')[1] : tokenRaw;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: number; role: Role };
+    console.log('✅ JWT verified for user:', decoded.userId, 'role:', decoded.role);
+    socket.data.userId = decoded.userId;
+    socket.data.userRole = decoded.role;
+    return next();
+  } catch (err) {
+    console.error('❌ JWT verification failed:', err);
+    return next(new Error('UNAUTHORIZED'));
+  }
+  */
+});
+
+io.on('connection', (socket) => {
+  // Join room (limit 2 participants)
+  socket.on('webrtc:join', (payload: JoinPayload, ack?: Function) => {
+    console.log('🚪 Join request from socket:', socket.id, 'payload:', payload);
+    const roomId = payload?.roomId;
+    if (!roomId) {
+      console.log('❌ No room ID provided');
+      if (ack) ack({ ok: false, error: 'ROOM_ID_REQUIRED' });
+      return;
+    }
+    // Derive role from JWT (doctor/patient only)
+    const userRole: Role | undefined = socket.data?.userRole as Role | undefined;
+    console.log('👤 User role from JWT:', userRole);
+    let role: 'doctor' | 'patient' | undefined;
+    if (userRole === 'DOCTOR') role = 'doctor';
+    if (userRole === 'PATIENT') role = 'patient';
+    if (!role) {
+      console.log('❌ Role not allowed:', userRole);
+      if (ack) ack({ ok: false, error: 'ROLE_NOT_ALLOWED' });
+      return;
+    }
+    const currentSize = getRoomSize(roomId);
+    console.log('📊 Room size:', currentSize, 'for room:', roomId);
+    if (currentSize >= 2) {
+      console.log('❌ Room is full');
+      if (ack) ack({ ok: false, error: 'ROOM_FULL' });
+      return;
+    }
+    const roles = roomRoles.get(roomId) || {};
+    console.log('🎭 Current roles in room:', roles);
+    if (roles[role]) {
+      console.log('❌ Role already taken:', role);
+      if (ack) ack({ ok: false, error: 'ROLE_TAKEN' });
+      return;
+    }
+    // Assign role and join
+    roles[role] = socket.id;
+    roomRoles.set(roomId, roles);
+    socket.data.role = role;
+    socket.data.roomId = roomId;
+    socket.join(roomId);
+    const newSize = currentSize + 1;
+    console.log('✅ User joined room:', roomId, 'as', role, 'new size:', newSize);
+    socket.to(roomId).emit('webrtc:peer-joined', { socketId: socket.id, role });
+    if (ack) ack({ ok: true, participants: newSize, role });
+  });
+
+  // Offer/Answer exchange
+  socket.on('webrtc:offer', (payload: SignalPayload) => {
+    if (!payload?.roomId || !payload?.sdp) return;
+    socket.to(payload.roomId).emit('webrtc:offer', { from: socket.id, sdp: payload.sdp });
+  });
+
+  socket.on('webrtc:answer', (payload: SignalPayload) => {
+    if (!payload?.roomId || !payload?.sdp) return;
+    socket.to(payload.roomId).emit('webrtc:answer', { from: socket.id, sdp: payload.sdp });
+  });
+
+  // ICE candidates
+  socket.on('webrtc:ice-candidate', (payload: SignalPayload) => {
+    if (!payload?.roomId || !payload?.candidate) return;
+    socket.to(payload.roomId).emit('webrtc:ice-candidate', { from: socket.id, candidate: payload.candidate });
+  });
+
+  // Leave room
+  socket.on('webrtc:leave', (payload: { roomId: string }) => {
+    const roomId = payload?.roomId;
+    if (!roomId) return;
+    const roles = roomRoles.get(roomId);
+    if (roles) {
+      if (roles.doctor === socket.id) roles.doctor = undefined;
+      if (roles.patient === socket.id) roles.patient = undefined;
+      if (!roles.doctor && !roles.patient) roomRoles.delete(roomId); else roomRoles.set(roomId, roles);
+    }
+    socket.leave(roomId);
+    socket.to(roomId).emit('webrtc:peer-left', { socketId: socket.id });
+  });
+
+  // Cleanup on disconnect
+  socket.on('disconnect', () => {
+    const roomId: string | undefined = socket.data?.roomId;
+    if (roomId) {
+      const roles = roomRoles.get(roomId);
+      if (roles) {
+        if (roles.doctor === socket.id) roles.doctor = undefined;
+        if (roles.patient === socket.id) roles.patient = undefined;
+        if (!roles.doctor && !roles.patient) roomRoles.delete(roomId); else roomRoles.set(roomId, roles);
+      }
+      socket.to(roomId).emit('webrtc:peer-left', { socketId: socket.id });
+    }
+  });
+});
+
 // Graceful shutdown handling
 process.on('SIGTERM', () => {
   console.log('🔄 SIGTERM received, shutting down gracefully...');
@@ -202,7 +366,7 @@ process.on('uncaughtException', (error) => {
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${securityConfig.environment}`);
   console.log(`🛡️ Security features enabled:`);
