@@ -44,6 +44,9 @@ const compression_1 = __importDefault(require("compression"));
 const express_rate_limit_1 = __importStar(require("express-rate-limit"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
+// Load environment variables first
+dotenv_1.default.config();
 // Import security configuration
 const security_config_1 = require("./config/security.config");
 // Import modules
@@ -55,7 +58,7 @@ const validation_1 = require("./utils/validation");
 const auth_middleware_1 = require("./shared/middleware/auth-middleware");
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
-dotenv_1.default.config();
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const app = (0, express_1.default)();
 const httpServer = http_1.default.createServer(app);
 // Trust proxy configuration for load balancers
@@ -131,6 +134,15 @@ app.use(validation_1.sanitizeInput);
 // Request size limits
 app.use(express_1.default.json({ limit: security_config_1.securityConfig.requestLimits.json }));
 app.use(express_1.default.urlencoded({ extended: true, limit: security_config_1.securityConfig.requestLimits.urlencoded }));
+// Root endpoint for basic connectivity test
+app.get('/', (req, res) => {
+    res.status(200).json({
+        message: 'QHealth Backend API is running',
+        timestamp: new Date().toISOString(),
+        environment: security_config_1.securityConfig.environment,
+        version: process.env.npm_package_version || '1.0.0',
+    });
+});
 // Health check endpoint with security headers
 app.get('/health', (req, res) => {
     // Set security headers for health check
@@ -212,47 +224,37 @@ const getRoomSize = (roomId) => {
 const roomRoles = new Map();
 // Validate JWT from Socket.IO handshake and attach user info
 io.use((socket, next) => {
+    var _a;
     console.log('🔐 Socket.IO handshake attempt from:', socket.handshake.address);
-    // TEMPORARY: Disable JWT verification for testing with mock tokens
-    // TODO: Re-enable JWT verification when real auth is implemented
-    const tokenRaw = (socket.handshake.auth && socket.handshake.auth.token);
-    console.log('🔑 Token received:', tokenRaw ? 'Yes' : 'No');
-    if (tokenRaw && tokenRaw.includes('doctor')) {
-        console.log('✅ Mock doctor token detected, assigning DOCTOR role');
-        socket.data.userId = 2;
-        socket.data.userRole = 'DOCTOR';
+    console.log('🔧 JWT_SECRET available:', !!process.env.JWT_SECRET);
+    console.log('🔧 JWT_SECRET length:', ((_a = process.env.JWT_SECRET) === null || _a === void 0 ? void 0 : _a.length) || 0);
+    try {
+        const tokenRaw = (socket.handshake.auth && socket.handshake.auth.token);
+        console.log('🔑 Token received:', tokenRaw ? 'Yes' : 'No');
+        console.log('🔑 Token preview:', tokenRaw ? `${tokenRaw.substring(0, 20)}...` : 'None');
+        if (!tokenRaw) {
+            console.log('❌ No token provided');
+            return next(new Error('UNAUTHORIZED'));
+        }
+        // Remove 'Bearer ' prefix if present
+        const token = tokenRaw.startsWith('Bearer ') ? tokenRaw.split(' ')[1] : tokenRaw;
+        console.log('🔑 Cleaned token preview:', `${token.substring(0, 20)}...`);
+        // Verify JWT token
+        const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
+        console.log('✅ JWT verified for user:', decoded.userId, 'role:', decoded.role);
+        socket.data.userId = decoded.userId;
+        socket.data.userRole = decoded.role;
+        return next();
     }
-    else if (tokenRaw && tokenRaw.includes('patient')) {
-        console.log('✅ Mock patient token detected, assigning PATIENT role');
-        socket.data.userId = 3;
-        socket.data.userRole = 'PATIENT';
-    }
-    else if (tokenRaw && tokenRaw.includes('admin')) {
-        console.log('✅ Mock admin token detected, assigning ADMIN role');
-        socket.data.userId = 1;
-        socket.data.userRole = 'ADMIN';
-    }
-    else {
-        console.log('❌ No valid mock token found');
+    catch (err) {
+        console.error('❌ JWT verification failed:', err);
+        console.error('❌ Error details:', {
+            name: err === null || err === void 0 ? void 0 : err.name,
+            message: err === null || err === void 0 ? void 0 : err.message,
+            stack: err === null || err === void 0 ? void 0 : err.stack
+        });
         return next(new Error('UNAUTHORIZED'));
     }
-    return next();
-    /* ORIGINAL JWT VERIFICATION CODE (DISABLED FOR TESTING)
-    try {
-      const tokenRaw = (socket.handshake.auth && (socket.handshake.auth as any).token) as string | undefined;
-      console.log('🔑 Token received:', tokenRaw ? 'Yes' : 'No');
-      if (!tokenRaw) return next(new Error('UNAUTHORIZED'));
-      const token = tokenRaw.startsWith('Bearer ') ? tokenRaw.split(' ')[1] : tokenRaw;
-      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: number; role: Role };
-      console.log('✅ JWT verified for user:', decoded.userId, 'role:', decoded.role);
-      socket.data.userId = decoded.userId;
-      socket.data.userRole = decoded.role;
-      return next();
-    } catch (err) {
-      console.error('❌ JWT verification failed:', err);
-      return next(new Error('UNAUTHORIZED'));
-    }
-    */
 });
 io.on('connection', (socket) => {
     // Join room (limit 2 participants)
@@ -384,8 +386,16 @@ process.on('uncaughtException', (error) => {
     process.exit(1);
 });
 const PORT = process.env.PORT || 3000;
+// Log environment information
+console.log('🔧 Environment Variables:');
+console.log('   NODE_ENV:', process.env.NODE_ENV);
+console.log('   PORT:', process.env.PORT);
+console.log('   Using PORT:', PORT);
+console.log('   PWD:', process.cwd());
+console.log('   Files in current directory:', fs_1.default.readdirSync('.'));
 httpServer.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🌐 Server bound to port ${PORT}`);
     console.log(`📊 Environment: ${security_config_1.securityConfig.environment}`);
     console.log(`🛡️ Security features enabled:`);
     console.log(`   - CORS: ${security_config_1.securityConfig.cors.origin.length > 0 ? 'Yes' : 'No'}`);
@@ -393,4 +403,15 @@ httpServer.listen(PORT, () => {
     console.log(`   - Password Policy: Min ${security_config_1.securityConfig.password.minLength} chars`);
     console.log(`   - JWT Expiration: ${security_config_1.securityConfig.jwt.accessToken.expiresIn}`);
     console.log(`   - Session Timeout: ${security_config_1.securityConfig.session.inactivityTimeout / 60000} minutes`);
+});
+// Add error handling for the server
+httpServer.on('error', (error) => {
+    console.error('🚨 Server error:', error);
+    if (error.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${PORT} is already in use`);
+    }
+    else if (error.code === 'EACCES') {
+        console.error(`❌ Permission denied to bind to port ${PORT}`);
+    }
+    process.exit(1);
 });

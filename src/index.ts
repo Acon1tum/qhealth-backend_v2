@@ -218,46 +218,40 @@ const roomRoles = new Map<string, { doctor?: string; patient?: string }>();
 // Validate JWT from Socket.IO handshake and attach user info
 io.use((socket, next) => {
   console.log('🔐 Socket.IO handshake attempt from:', socket.handshake.address);
-  // TEMPORARY: Disable JWT verification for testing with mock tokens
-  // TODO: Re-enable JWT verification when real auth is implemented
-  const tokenRaw = (socket.handshake.auth && (socket.handshake.auth as any).token) as string | undefined;
-  console.log('🔑 Token received:', tokenRaw ? 'Yes' : 'No');
+  console.log('🔧 JWT_SECRET available:', !!process.env.JWT_SECRET);
+  console.log('🔧 JWT_SECRET length:', process.env.JWT_SECRET?.length || 0);
   
-  if (tokenRaw && tokenRaw.includes('doctor')) {
-    console.log('✅ Mock doctor token detected, assigning DOCTOR role');
-    socket.data.userId = 2;
-    socket.data.userRole = 'DOCTOR';
-  } else if (tokenRaw && tokenRaw.includes('patient')) {
-    console.log('✅ Mock patient token detected, assigning PATIENT role');
-    socket.data.userId = 3;
-    socket.data.userRole = 'PATIENT';
-  } else if (tokenRaw && tokenRaw.includes('admin')) {
-    console.log('✅ Mock admin token detected, assigning ADMIN role');
-    socket.data.userId = 1;
-    socket.data.userRole = 'ADMIN';
-  } else {
-    console.log('❌ No valid mock token found');
-    return next(new Error('UNAUTHORIZED'));
-  }
-  
-  return next();
-  
-  /* ORIGINAL JWT VERIFICATION CODE (DISABLED FOR TESTING)
   try {
     const tokenRaw = (socket.handshake.auth && (socket.handshake.auth as any).token) as string | undefined;
     console.log('🔑 Token received:', tokenRaw ? 'Yes' : 'No');
-    if (!tokenRaw) return next(new Error('UNAUTHORIZED'));
+    console.log('🔑 Token preview:', tokenRaw ? `${tokenRaw.substring(0, 20)}...` : 'None');
+    
+    if (!tokenRaw) {
+      console.log('❌ No token provided');
+      return next(new Error('UNAUTHORIZED'));
+    }
+    
+    // Remove 'Bearer ' prefix if present
     const token = tokenRaw.startsWith('Bearer ') ? tokenRaw.split(' ')[1] : tokenRaw;
+    console.log('🔑 Cleaned token preview:', `${token.substring(0, 20)}...`);
+    
+    // Verify JWT token
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: number; role: Role };
     console.log('✅ JWT verified for user:', decoded.userId, 'role:', decoded.role);
+    
     socket.data.userId = decoded.userId;
     socket.data.userRole = decoded.role;
+    
     return next();
-  } catch (err) {
+  } catch (err: any) {
     console.error('❌ JWT verification failed:', err);
+    console.error('❌ Error details:', {
+      name: err?.name,
+      message: err?.message,
+      stack: err?.stack
+    });
     return next(new Error('UNAUTHORIZED'));
   }
-  */
 });
 
 io.on('connection', (socket) => {
