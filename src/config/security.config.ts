@@ -49,7 +49,7 @@ export const securityConfig = {
   // CORS Configuration
   cors: {
     origin: process.env.NODE_ENV === 'production' 
-      ? process.env.ALLOWED_ORIGINS?.split(',') || ['https://quanby-healthcare-v2.vercel.app']
+      ? process.env.ALLOWED_ORIGINS?.split(',') || ['https://quanby-healthcare-v2.vercel.app', 'https://qhealthcare.quanbyit.com', 'http://localhost:4200', 'http://127.0.0.1:4200']
       : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:4200', 'http://127.0.0.1:3000'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
