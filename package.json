@@ -36,7 +36,7 @@
     "@types/helmet": "^0.0.48",
     "@types/jsonwebtoken": "^8.5.9",
     "@types/morgan": "^1.9.10",
-    "@types/node": "^24.0.14",
+    "@types/node": "^24.2.0",
     "@types/nodemailer": "^6.4.17",
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.1",
