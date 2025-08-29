@@ -190,7 +190,122 @@ export class MedicalRecordsController {
     }
   }
 
-  // Update medical record
+  // Get patient medical records with summary and trends (for dashboard)
+  async getPatientMedicalRecordsSummary(req: Request, res: Response) {
+    try {
+      const { patientId } = req.params;
+      const userId = (req as any).user.id;
+      const userRole = (req as any).user.role;
+
+      // Verify permissions
+      if (userRole === Role.PATIENT && userId !== Number(patientId)) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only view your own medical records'
+        });
+      }
+
+      if (userRole === Role.DOCTOR) {
+        // Check if doctor has access to this patient
+        const hasAccess = await this.checkDoctorAccess(userId, Number(patientId));
+        if (!hasAccess) {
+          return res.status(403).json({
+            success: false,
+            message: 'You do not have access to this patient'
+          });
+        }
+      }
+
+      // Get patient info
+      const patientInfo = await prisma.patientInfo.findFirst({
+        where: { userId: Number(patientId) }
+      });
+
+      if (!patientInfo) {
+        return res.status(404).json({
+          success: false,
+          message: 'Patient not found'
+        });
+      }
+
+      // Get consultations with health scans
+      const consultations = await prisma.consultation.findMany({
+        where: { patientId: Number(patientId) },
+        include: {
+          doctor: {
+            select: {
+              id: true,
+              email: true,
+              doctorInfo: { select: { firstName: true, lastName: true, specialization: true } }
+            }
+          },
+          healthScan: true
+        },
+        orderBy: { startTime: 'desc' }
+      });
+
+      // Get health scans
+      const healthScans = consultations
+        .filter(c => c.healthScan)
+        .map(c => c.healthScan)
+        .filter(Boolean);
+
+      // Calculate health trends
+      const healthTrends = this.calculateHealthTrends(healthScans);
+
+      // Calculate summary
+      const summary = {
+        totalConsultations: consultations.length,
+        totalHealthScans: healthScans.length,
+        lastConsultation: consultations.length > 0 ? consultations[0].startTime : null,
+        lastHealthScan: healthScans.length > 0 ? healthScans[0]?.consultationId : null
+      };
+
+      // Get emergency contact and insurance info
+      const emergencyContact = await prisma.emergencyContact.findFirst({
+        where: { patientId: Number(patientId) }
+      });
+
+      const insuranceInfo = await prisma.insuranceInfo.findFirst({
+        where: { patientId: Number(patientId) }
+      });
+
+      // Build complete patient info
+      const completePatientInfo = {
+        ...patientInfo,
+        emergencyContact,
+        insuranceInfo
+      };
+
+      res.json({
+        success: true,
+        data: {
+          patientInfo: completePatientInfo,
+          consultations: consultations.map(c => ({
+            id: c.id,
+            startTime: c.startTime,
+            endTime: c.endTime,
+            consultationCode: c.consultationCode,
+            doctor: c.doctor,
+            healthScan: c.healthScan
+          })),
+          healthScans,
+          healthTrends,
+          summary
+        }
+      });
+
+    } catch (error) {
+      console.error('Error fetching medical records summary:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch medical records summary',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  // Update medical record (creator only)
   async updateMedicalRecord(req: Request, res: Response) {
     try {
       const { recordId } = req.params;
@@ -512,5 +627,44 @@ export class MedicalRecordsController {
         }
       });
     }
+  }
+
+  // Private method to calculate health trends
+  private calculateHealthTrends(healthScans: any[]): any {
+    if (healthScans.length < 2) {
+      return {
+        heartRate: { trend: 'stable', change: 0 },
+        bloodPressure: { trend: 'stable', change: 0 },
+        spO2: { trend: 'stable', change: 0 },
+        weight: { trend: 'stable', change: 0 },
+        stressLevel: { trend: 'stable', change: 0 },
+        generalWellness: { trend: 'stable', change: 0 }
+      };
+    }
+
+    const latest = healthScans[0];
+    const previous = healthScans[1];
+
+    const calculateTrend = (current: number | undefined, previous: number | undefined, metric: string) => {
+      if (!current || !previous) return { trend: 'stable', change: 0 };
+      
+      const change = current - previous;
+      const percentChange = (change / previous) * 100;
+      
+      let trend = 'stable';
+      if (percentChange > 5) trend = 'improving';
+      else if (percentChange < -5) trend = 'declining';
+      
+      return { trend, change: Math.round(percentChange * 100) / 100 };
+    };
+
+    return {
+      heartRate: calculateTrend(latest.heartRate, previous.heartRate, 'heartRate'),
+      bloodPressure: { trend: 'stable', change: 0 }, // Complex metric, simplified
+      spO2: calculateTrend(latest.spO2, previous.spO2, 'spO2'),
+      weight: calculateTrend(latest.weight, previous.weight, 'weight'),
+      stressLevel: calculateTrend(latest.stressLevel, previous.stressLevel, 'stressLevel'),
+      generalWellness: calculateTrend(latest.generalWellness, previous.generalWellness, 'generalWellness')
+    };
   }
 }

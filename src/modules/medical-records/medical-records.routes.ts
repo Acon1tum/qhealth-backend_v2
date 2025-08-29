@@ -22,6 +22,12 @@ router.get('/patient/:patientId',
   medicalRecordsController.getPatientMedicalRecords.bind(medicalRecordsController)
 );
 
+// Get patient medical records with summary and trends (for dashboard)
+router.get('/patient/:patientId/summary', 
+  requireRole([Role.DOCTOR, Role.PATIENT]), 
+  medicalRecordsController.getPatientMedicalRecordsSummary.bind(medicalRecordsController)
+);
+
 // Update medical record (creator only)
 router.put('/:recordId', 
   requireRole([Role.DOCTOR, Role.PATIENT]), 

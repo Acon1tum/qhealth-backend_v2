@@ -15,6 +15,8 @@ router.use(auth_middleware_1.requireAuth);
 router.post('/create', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR, client_1.Role.PATIENT]), medicalRecordsController.createMedicalRecord.bind(medicalRecordsController));
 // Get patient medical records (doctors and patients)
 router.get('/patient/:patientId', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR, client_1.Role.PATIENT]), medicalRecordsController.getPatientMedicalRecords.bind(medicalRecordsController));
+// Get patient medical records with summary and trends (for dashboard)
+router.get('/patient/:patientId/summary', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR, client_1.Role.PATIENT]), medicalRecordsController.getPatientMedicalRecordsSummary.bind(medicalRecordsController));
 // Update medical record (creator only)
 router.put('/:recordId', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR, client_1.Role.PATIENT]), medicalRecordsController.updateMedicalRecord.bind(medicalRecordsController));
 // Update privacy settings (patient or creator)
