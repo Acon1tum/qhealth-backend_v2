@@ -52,6 +52,9 @@ const security_config_1 = require("./config/security.config");
 // Import modules
 const email_routes_1 = require("./modules/email/email.routes");
 const auth_routes_1 = __importDefault(require("./modules/auth/auth.routes"));
+const medical_records_routes_1 = require("./modules/medical-records/medical-records.routes");
+const appointments_routes_1 = require("./modules/appointments/appointments.routes");
+const consultations_routes_1 = require("./modules/consultations/consultations.routes");
 // Import middleware
 const error_handler_1 = require("./shared/middleware/error-handler");
 const validation_1 = require("./utils/validation");
@@ -189,6 +192,9 @@ app.get('/admin/security-audit', auth_middleware_1.authenticateToken, auth_middl
 // API Routes with security middleware
 app.use('/api/auth', auth_routes_1.default);
 app.use('/api/email', email_routes_1.emailRoutes);
+app.use('/api/medical-records', medical_records_routes_1.medicalRecordsRoutes);
+app.use('/api/appointments', appointments_routes_1.appointmentsRoutes);
+app.use('/api/consultations', consultations_routes_1.consultationsRoutes);
 // Serve static files with enhanced security
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads'), {
     setHeaders: (res, filePath) => {

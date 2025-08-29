@@ -35,6 +35,21 @@ model User {
   auditLogs              AuditLog[] // Audit logs for this user
   securityEvents         SecurityEvent[] // Security events for this user
   resolvedSecurityEvents SecurityEvent[] @relation("ResolvedSecurityEvents") // Security events resolved by this user
+  
+  // New appointment and reschedule relations
+  patientAppointments    AppointmentRequest[] @relation("PatientAppointments") // Appointments where user is patient
+  doctorAppointments     AppointmentRequest[] @relation("DoctorAppointments") // Appointments where user is doctor
+  rescheduleRequests     RescheduleRequest[] @relation("UserRescheduleRequests") // Reschedule requests initiated by user
+  
+  // New privacy and sharing relations
+  sharedConsultations    ConsultationSharing[] @relation("SharedConsultations") // Consultations shared with this doctor
+  consultationSharing    ConsultationSharing[] @relation("ConsultationSharing") // Consultations shared by this user
+  patientMedicalHistory  PatientMedicalHistory[] @relation("PatientMedicalHistory") // Medical history records for this patient
+  createdMedicalRecords  PatientMedicalHistory[] @relation("CreatedMedicalRecords") // Medical records created by this user
+  
+  // HealthScan privacy and sharing relations
+  sharedHealthScans      HealthScanSharing[] @relation("SharedHealthScans") // Health scans shared with this doctor
+  healthScanSharing      HealthScanSharing[] @relation("HealthScanSharing") // Health scans shared by this user
 }
 
 // Enum for different user roles
@@ -96,11 +111,22 @@ model Consultation {
   patientId        Int // Foreign key to User (Patient)
   startTime        DateTime // The start time of the consultation
   endTime          DateTime? // The end time of the consultation (optional)
-  consultationLink String // The unique WebRTC video link for the consultation
+  consultationCode String   @unique // Unique consultation code for tracking and identification (9 characters)
+  isPublic        Boolean  @default(false) // Whether consultation is public for other doctors
+  notes           String?  // Doctor's private notes about the consultation
+  diagnosis       String?  // Doctor's diagnosis
+  treatment       String?  // Treatment plan
+  followUpDate    DateTime? // Follow-up appointment date
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   doctor     User        @relation("DoctorConsultations", fields: [doctorId], references: [id]) // Doctor who conducted the consultation
   patient    User        @relation("PatientConsultations", fields: [patientId], references: [id]) // Patient being consulted
   healthScan HealthScan? // Health scan results related to the consultation (optional)
+  appointmentRequest AppointmentRequest? // Links back to the original appointment request
+  privacySettings ConsultationPrivacy[] // Privacy settings for this consultation
+  sharedWith     ConsultationSharing[] // Which doctors can access this consultation
+  medicalHistory PatientMedicalHistory[] // Medical history records related to this consultation
 }
 
 // HealthScan model that stores health scan data (e.g., heart rate, stress level, etc.)
@@ -147,6 +173,8 @@ model HealthScan {
   historyFamilyDiabetes Int? // Family history of diabetes: 0 = none, 1 = one parent/sibling, 2 = both parents/siblings
 
   consultation Consultation @relation(fields: [consultationId], references: [id]) // Relation to Consultation
+  privacySettings HealthScanPrivacy[] // Privacy settings for this health scan
+  sharedWith HealthScanSharing[] // Which doctors can access this health scan
 }
 
 // Patient Information model to store additional details about the patient
@@ -275,4 +303,236 @@ enum AuditLevel {
   WARNING
   ERROR
   CRITICAL
+}
+
+// Appointment Request model for patient-initiated consultation requests
+model AppointmentRequest {
+  id          Int                @id @default(autoincrement())
+  patientId   Int                // Patient requesting the appointment
+  doctorId    Int                // Doctor being requested
+  requestedDate DateTime         // Preferred date for consultation
+  requestedTime String           // Preferred time slot
+  reason      String             // Reason for consultation
+  status      AppointmentStatus  @default(PENDING)
+  priority    Priority           @default(NORMAL)
+  notes       String?            // Additional notes from patient
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  
+  patient    User                @relation("PatientAppointments", fields: [patientId], references: [id])
+  doctor     User                @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  consultation Consultation?      @relation(fields: [consultationId], references: [id]) // Links to actual consultation when confirmed
+  consultationId Int?             @unique // Foreign key to Consultation (unique for one-to-one relation)
+  rescheduleRequests RescheduleRequest[] // Track reschedule requests
+  
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([status])
+  @@index([requestedDate])
+}
+
+// Reschedule Request model for handling appointment rescheduling
+model RescheduleRequest {
+  id                Int                    @id @default(autoincrement())
+  appointmentId     Int                    // Reference to the appointment being rescheduled
+  requestedBy       Int                    // User ID who requested the reschedule (patient or doctor)
+  requestedByRole   Role                   // Role of the person requesting reschedule
+  currentDate       DateTime               // Current scheduled date
+  currentTime       String                 // Current scheduled time
+  newDate           DateTime               // Proposed new date
+  newTime           String                 // Proposed new time
+  reason            String                 // Reason for rescheduling
+  status            RescheduleStatus       @default(PENDING)
+  proposedBy        RescheduleProposedBy   // Who proposed the new time
+  notes             String?                // Additional notes
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  resolvedAt        DateTime?              // When the reschedule was resolved
+  
+  appointment       AppointmentRequest      @relation(fields: [appointmentId], references: [id])
+  requestedByUser   User                   @relation("UserRescheduleRequests", fields: [requestedBy], references: [id])
+  
+  @@index([appointmentId])
+  @@index([requestedBy])
+  @@index([status])
+  @@index([newDate])
+}
+
+// Appointment Status enum
+enum AppointmentStatus {
+  PENDING     // Waiting for doctor approval
+  CONFIRMED   // Doctor approved and scheduled
+  CANCELLED   // Cancelled by patient or doctor
+  COMPLETED   // Consultation completed
+  REJECTED    // Doctor rejected the request
+  RESCHEDULED // Appointment was rescheduled
+}
+
+// Reschedule Status enum
+enum RescheduleStatus {
+  PENDING     // Waiting for approval from the other party
+  APPROVED    // Reschedule request approved
+  REJECTED    // Reschedule request rejected
+  CANCELLED   // Reschedule request cancelled
+}
+
+// Reschedule Proposed By enum
+enum RescheduleProposedBy {
+  PATIENT     // Patient proposed the new time
+  DOCTOR      // Doctor proposed the new time
+  SYSTEM      // System suggested the new time (e.g., due to conflict)
+}
+
+// Priority enum
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// Consultation Privacy model to manage privacy settings
+model ConsultationPrivacy {
+  id             Int      @id @default(autoincrement())
+  consultationId Int      // Reference to the consultation
+  settingType    PrivacySettingType // Type of privacy setting
+  isEnabled      Boolean  @default(true) // Whether this privacy setting is enabled
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  consultation   Consultation @relation(fields: [consultationId], references: [id])
+  
+  @@unique([consultationId, settingType])
+  @@index([consultationId])
+}
+
+// Consultation Sharing model to control which doctors can access consultations
+model ConsultationSharing {
+  id             Int      @id @default(autoincrement())
+  consultationId Int      // Reference to the consultation being shared
+  sharedWithDoctorId Int  // Doctor who can access this consultation
+  accessLevel    AccessLevel @default(READ_ONLY) // Level of access granted
+  sharedBy       Int      // User who shared the consultation (patient or original doctor)
+  sharedAt       DateTime @default(now())
+  expiresAt      DateTime? // When access expires (optional)
+  isActive       Boolean  @default(true) // Whether the sharing is still active
+  
+  consultation   Consultation @relation(fields: [consultationId], references: [id])
+  sharedWithDoctor User     @relation("SharedConsultations", fields: [sharedWithDoctorId], references: [id])
+  sharedByUser     User     @relation("ConsultationSharing", fields: [sharedBy], references: [id])
+  
+  @@unique([consultationId, sharedWithDoctorId])
+  @@index([consultationId])
+  @@index([sharedWithDoctorId])
+  @@index([sharedBy])
+}
+
+// Patient Medical History model for comprehensive health records
+model PatientMedicalHistory {
+  id              Int      @id @default(autoincrement())
+  patientId       Int      // Reference to the patient
+  consultationId  Int?     // Optional reference to specific consultation
+  recordType      MedicalRecordType // Type of medical record
+  title           String   // Title/description of the record
+  content         String   // Content of the medical record
+  isPublic        Boolean  @default(false) // Whether this record is public
+  isSensitive     Boolean  @default(false) // Whether this is sensitive information
+  createdBy       Int      // User who created this record
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  patient         User     @relation("PatientMedicalHistory", fields: [patientId], references: [id])
+  consultation    Consultation? @relation(fields: [consultationId], references: [id])
+  creator         User     @relation("CreatedMedicalRecords", fields: [createdBy], references: [id])
+  privacySettings MedicalRecordPrivacy[] // Privacy settings for this record
+  
+  @@index([patientId])
+  @@index([consultationId])
+  @@index([isPublic])
+  @@index([recordType])
+}
+
+// Medical Record Privacy model
+model MedicalRecordPrivacy {
+  id                   Int      @id @default(autoincrement())
+  medicalRecordId      Int      // Reference to the medical record
+  settingType          PrivacySettingType // Type of privacy setting
+  isEnabled            Boolean  @default(true) // Whether this privacy setting is enabled
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  
+  medicalRecord        PatientMedicalHistory @relation(fields: [medicalRecordId], references: [id])
+  
+  @@unique([medicalRecordId, settingType])
+  @@index([medicalRecordId])
+}
+
+// HealthScan Privacy model to manage privacy settings for health scan data
+model HealthScanPrivacy {
+  id             Int      @id @default(autoincrement())
+  healthScanId   Int      // Reference to the health scan
+  settingType    PrivacySettingType // Type of privacy setting
+  isEnabled      Boolean  @default(true) // Whether this privacy setting is enabled
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  healthScan     HealthScan @relation(fields: [healthScanId], references: [id])
+  
+  @@unique([healthScanId, settingType])
+  @@index([healthScanId])
+}
+
+// HealthScan Sharing model to control which doctors can access health scan data
+model HealthScanSharing {
+  id                   Int      @id @default(autoincrement())
+  healthScanId         Int      // Reference to the health scan being shared
+  sharedWithDoctorId   Int      // Doctor who can access this health scan
+  accessLevel          AccessLevel @default(READ_ONLY) // Level of access granted
+  sharedBy             Int      // User who shared the health scan (patient or original doctor)
+  sharedAt             DateTime @default(now())
+  expiresAt            DateTime? // When access expires (optional)
+  isActive             Boolean  @default(true) // Whether the sharing is still active
+  
+  healthScan           HealthScan @relation(fields: [healthScanId], references: [id])
+  sharedWithDoctor     User       @relation("SharedHealthScans", fields: [sharedWithDoctorId], references: [id])
+  sharedByUser         User       @relation("HealthScanSharing", fields: [sharedBy], references: [id])
+  
+  @@unique([healthScanId, sharedWithDoctorId])
+  @@index([healthScanId])
+  @@index([sharedWithDoctorId])
+  @@index([sharedBy])
+}
+
+// Privacy Setting Type enum
+enum PrivacySettingType {
+  PUBLIC_READ        // Can be read by other doctors
+  PUBLIC_WRITE       // Can be modified by other doctors (rarely used)
+  SHARED_SPECIFIC    // Shared with specific doctors only
+  PATIENT_APPROVED   // Requires patient approval for sharing
+  TIME_LIMITED       // Access expires after certain time
+  ROLE_BASED         // Access based on doctor role/specialization
+}
+
+// Access Level enum
+enum AccessLevel {
+  READ_ONLY          // Can only read/view the consultation
+  READ_WITH_NOTES    // Can read and see doctor's notes
+  READ_WITH_HISTORY  // Can read and see related medical history
+  FULL_ACCESS        // Full access (rare, usually for specialists)
+}
+
+// Medical Record Type enum
+enum MedicalRecordType {
+  CONSULTATION_NOTES // Notes from a consultation
+  DIAGNOSIS          // Medical diagnosis
+  TREATMENT_PLAN     // Treatment plan
+  MEDICATION         // Medication prescribed
+  LAB_RESULTS        // Laboratory test results
+  IMAGING_RESULTS    // X-ray, MRI, etc. results
+  ALLERGIES          // Patient allergies
+  CHRONIC_CONDITIONS // Chronic medical conditions
+  SURGICAL_HISTORY   // Previous surgeries
+  FAMILY_HISTORY     // Family medical history
+  LIFESTYLE          // Lifestyle factors
+  VACCINATIONS       // Vaccination history
 }

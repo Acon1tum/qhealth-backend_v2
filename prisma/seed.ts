@@ -317,7 +317,7 @@ async function main() {
         patientId: patients[0].id,
         startTime: new Date('2024-01-15T10:00:00Z'),
         endTime: new Date('2024-01-15T10:30:00Z'),
-        consultationLink: 'https://meet.qhealth.com/consultation-001',
+        consultationCode: 'QH1501ABC',
       },
     }),
     prisma.consultation.create({
@@ -326,7 +326,7 @@ async function main() {
         patientId: patients[1].id,
         startTime: new Date('2024-01-16T14:00:00Z'),
         endTime: new Date('2024-01-16T14:45:00Z'),
-        consultationLink: 'https://meet.qhealth.com/consultation-002',
+        consultationCode: 'QH1602DEF',
       },
     }),
     prisma.consultation.create({
@@ -334,7 +334,7 @@ async function main() {
         doctorId: doctors[2].id,
         patientId: patients[2].id,
         startTime: new Date('2024-01-17T09:00:00Z'),
-        consultationLink: 'https://meet.qhealth.com/consultation-003',
+        consultationCode: 'QH1703GHI',
       },
     }),
   ]);
