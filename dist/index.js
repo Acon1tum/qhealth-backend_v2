@@ -195,6 +195,9 @@ app.use('/api/email', email_routes_1.emailRoutes);
 app.use('/api/medical-records', medical_records_routes_1.medicalRecordsRoutes);
 app.use('/api/appointments', appointments_routes_1.appointmentsRoutes);
 app.use('/api/consultations', consultations_routes_1.consultationsRoutes);
+app.use('/api/medical-records', medical_records_routes_1.medicalRecordsRoutes);
+app.use('/api/appointments', appointments_routes_1.appointmentsRoutes);
+app.use('/api/consultations', consultations_routes_1.consultationsRoutes);
 // Serve static files with enhanced security
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads'), {
     setHeaders: (res, filePath) => {

@@ -206,3 +206,4 @@ For technical support or questions about the API, please contact the development
 ---
 
 **Note**: This API is designed for healthcare applications and includes comprehensive privacy controls to ensure HIPAA compliance and patient data protection.
+
