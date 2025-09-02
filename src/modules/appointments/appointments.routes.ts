@@ -22,6 +22,19 @@ router.get('/my-appointments',
   appointmentsController.getUserAppointments.bind(appointmentsController)
 );
 
+// List available doctors (patients need this to request appointments)
+router.get('/doctors', 
+  // Any authenticated user
+  appointmentsController.getAvailableDoctors.bind(appointmentsController)
+);
+
+// Get doctor availability by doctor ID (for patients to check availability)
+// This must come before parameterized routes to avoid conflicts
+router.get('/doctor/:doctorId/availability', 
+  // Any authenticated user
+  appointmentsController.getDoctorAvailability.bind(appointmentsController)
+);
+
 // Update appointment status (doctors only)
 router.patch('/:appointmentId/status', 
   requireRole([Role.DOCTOR]), 
@@ -44,6 +57,22 @@ router.patch('/reschedule/:rescheduleId/status',
 router.patch('/:appointmentId/cancel', 
   requireRole([Role.PATIENT, Role.DOCTOR]), 
   appointmentsController.cancelAppointment.bind(appointmentsController)
+);
+
+// Additional routes for doctor weekly availability
+router.get('/my/availability', 
+  requireRole([Role.DOCTOR]), 
+  appointmentsController.getMyWeeklyAvailability.bind(appointmentsController)
+);
+
+router.put('/my/availability', 
+  requireRole([Role.DOCTOR]), 
+  appointmentsController.updateMyWeeklyAvailability.bind(appointmentsController)
+);
+
+router.post('/my/reschedule-day', 
+  requireRole([Role.DOCTOR]), 
+  appointmentsController.requestRescheduleForDay.bind(appointmentsController)
 );
 
 export { router as appointmentsRoutes };

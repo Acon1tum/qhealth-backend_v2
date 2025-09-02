@@ -15,6 +15,15 @@ router.use(auth_middleware_1.requireAuth);
 router.post('/request', (0, auth_middleware_1.requireRole)([client_1.Role.PATIENT]), appointmentsController.createAppointmentRequest.bind(appointmentsController));
 // Get user appointments (patients and doctors)
 router.get('/my-appointments', (0, auth_middleware_1.requireRole)([client_1.Role.PATIENT, client_1.Role.DOCTOR]), appointmentsController.getUserAppointments.bind(appointmentsController));
+// List available doctors (patients need this to request appointments)
+router.get('/doctors', 
+// Any authenticated user
+appointmentsController.getAvailableDoctors.bind(appointmentsController));
+// Get doctor availability by doctor ID (for patients to check availability)
+// This must come before parameterized routes to avoid conflicts
+router.get('/doctor/:doctorId/availability', 
+// Any authenticated user
+appointmentsController.getDoctorAvailability.bind(appointmentsController));
 // Update appointment status (doctors only)
 router.patch('/:appointmentId/status', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR]), appointmentsController.updateAppointmentStatus.bind(appointmentsController));
 // Request reschedule (patients and doctors)
@@ -23,3 +32,7 @@ router.post('/:appointmentId/reschedule', (0, auth_middleware_1.requireRole)([cl
 router.patch('/reschedule/:rescheduleId/status', (0, auth_middleware_1.requireRole)([client_1.Role.PATIENT, client_1.Role.DOCTOR]), appointmentsController.updateRescheduleStatus.bind(appointmentsController));
 // Cancel appointment (patients and doctors)
 router.patch('/:appointmentId/cancel', (0, auth_middleware_1.requireRole)([client_1.Role.PATIENT, client_1.Role.DOCTOR]), appointmentsController.cancelAppointment.bind(appointmentsController));
+// Additional routes for doctor weekly availability
+router.get('/my/availability', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR]), appointmentsController.getMyWeeklyAvailability.bind(appointmentsController));
+router.put('/my/availability', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR]), appointmentsController.updateMyWeeklyAvailability.bind(appointmentsController));
+router.post('/my/reschedule-day', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR]), appointmentsController.requestRescheduleForDay.bind(appointmentsController));

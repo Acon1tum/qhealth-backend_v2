@@ -1,4 +1,4 @@
-import { PrismaClient, Role, Sex } from '@prisma/client';
+import { PrismaClient, Role, Sex, AppointmentStatus, Priority } from '@prisma/client';
 import { hash } from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -302,12 +302,65 @@ async function main() {
           dayOfWeek: schedule.dayOfWeek,
           startTime: new Date(`2024-01-01T${schedule.startTime}:00`),
           endTime: new Date(`2024-01-01T${schedule.endTime}:00`),
+          isAvailable: true,
         },
       })
     )
   );
 
   console.log('📅 Created doctor schedules');
+
+  // Create Appointment Requests (upcoming dates for testing)
+  const inDays = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  const appointments = await Promise.all([
+    prisma.appointmentRequest.create({
+      data: {
+        patientId: patients[0].id,
+        doctorId: doctors[0].id,
+        requestedDate: inDays(3),
+        requestedTime: '10:00',
+        reason: 'Chest pain follow-up',
+        status: AppointmentStatus.PENDING,
+        priority: Priority.NORMAL,
+        notes: 'Initial request'
+      }
+    }),
+    prisma.appointmentRequest.create({
+      data: {
+        patientId: patients[1].id,
+        doctorId: doctors[0].id,
+        requestedDate: inDays(5),
+        requestedTime: '11:30',
+        reason: 'EKG review',
+        status: AppointmentStatus.PENDING,
+        priority: Priority.HIGH
+      }
+    }),
+    prisma.appointmentRequest.create({
+      data: {
+        patientId: patients[2].id,
+        doctorId: doctors[1].id,
+        requestedDate: inDays(2),
+        requestedTime: '14:00',
+        reason: 'Skin rash evaluation',
+        status: AppointmentStatus.CONFIRMED,
+        priority: Priority.NORMAL
+      }
+    }),
+    prisma.appointmentRequest.create({
+      data: {
+        patientId: patients[0].id,
+        doctorId: doctors[2].id,
+        requestedDate: inDays(9),
+        requestedTime: '09:15',
+        reason: 'Migraine assessment',
+        status: AppointmentStatus.PENDING,
+        priority: Priority.LOW
+      }
+    })
+  ]);
+
+  console.log(`📨 Created appointment requests: ${appointments.length}`);
 
   // Create Consultations
   const consultations = await Promise.all([

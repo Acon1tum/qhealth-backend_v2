@@ -100,8 +100,11 @@ model DoctorSchedule {
   dayOfWeek String // Day of the week the doctor is available (e.g., Monday, Tuesday)
   startTime DateTime // Start time of doctor's availability on this day
   endTime   DateTime // End time of doctor's availability on this day
+  isAvailable Boolean @default(false) // Whether the doctor is available on this day
 
   doctor User @relation(fields: [doctorId], references: [id]) // Relationship to Doctor (User)
+
+  @@unique([doctorId, dayOfWeek])
 }
 
 // Consultation model that stores consultation details between a doctor and a patient
