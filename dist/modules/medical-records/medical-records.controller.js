@@ -228,19 +228,41 @@ class MedicalRecordsController {
                     },
                     orderBy: { startTime: 'desc' }
                 });
-                // Get health scans
+                // Get health scans with consultation information
                 const healthScans = consultations
                     .filter(c => c.healthScan)
-                    .map(c => c.healthScan)
+                    .map(c => (Object.assign(Object.assign({}, c.healthScan), { consultation: {
+                        startTime: c.startTime,
+                        endTime: c.endTime,
+                        doctor: c.doctor
+                    } })))
                     .filter(Boolean);
+                // Get medical history records
+                const medicalHistory = yield prisma.patientMedicalHistory.findMany({
+                    where: { patientId: Number(patientId) },
+                    include: {
+                        creator: {
+                            select: {
+                                id: true,
+                                email: true,
+                                role: true,
+                                doctorInfo: { select: { firstName: true, lastName: true } }
+                            }
+                        },
+                        privacySettings: true
+                    },
+                    orderBy: { createdAt: 'desc' }
+                });
                 // Calculate health trends
                 const healthTrends = this.calculateHealthTrends(healthScans);
                 // Calculate summary
                 const summary = {
                     totalConsultations: consultations.length,
                     totalHealthScans: healthScans.length,
+                    totalMedicalRecords: medicalHistory.length,
                     lastConsultation: consultations.length > 0 ? consultations[0].startTime : null,
-                    lastHealthScan: healthScans.length > 0 ? (_a = healthScans[0]) === null || _a === void 0 ? void 0 : _a.consultationId : null
+                    lastHealthScan: healthScans.length > 0 ? (_a = healthScans[0]) === null || _a === void 0 ? void 0 : _a.consultationId : null,
+                    lastMedicalRecord: medicalHistory.length > 0 ? medicalHistory[0].createdAt : null
                 };
                 // Get emergency contact and insurance info
                 const emergencyContact = yield prisma.emergencyContact.findFirst({
@@ -261,10 +283,16 @@ class MedicalRecordsController {
                             startTime: c.startTime,
                             endTime: c.endTime,
                             consultationCode: c.consultationCode,
+                            isPublic: c.isPublic,
+                            notes: c.notes,
+                            diagnosis: c.diagnosis,
+                            treatment: c.treatment,
+                            followUpDate: c.followUpDate,
                             doctor: c.doctor,
                             healthScan: c.healthScan
                         })),
                         healthScans,
+                        medicalHistory,
                         healthTrends,
                         summary
                     }

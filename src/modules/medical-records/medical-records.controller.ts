@@ -244,11 +244,35 @@ export class MedicalRecordsController {
         orderBy: { startTime: 'desc' }
       });
 
-      // Get health scans
+      // Get health scans with consultation information
       const healthScans = consultations
         .filter(c => c.healthScan)
-        .map(c => c.healthScan)
+        .map(c => ({
+          ...c.healthScan,
+          consultation: {
+            startTime: c.startTime,
+            endTime: c.endTime,
+            doctor: c.doctor
+          }
+        }))
         .filter(Boolean);
+
+      // Get medical history records
+      const medicalHistory = await prisma.patientMedicalHistory.findMany({
+        where: { patientId: Number(patientId) },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              email: true,
+              role: true,
+              doctorInfo: { select: { firstName: true, lastName: true } }
+            }
+          },
+          privacySettings: true
+        },
+        orderBy: { createdAt: 'desc' }
+      });
 
       // Calculate health trends
       const healthTrends = this.calculateHealthTrends(healthScans);
@@ -257,8 +281,10 @@ export class MedicalRecordsController {
       const summary = {
         totalConsultations: consultations.length,
         totalHealthScans: healthScans.length,
+        totalMedicalRecords: medicalHistory.length,
         lastConsultation: consultations.length > 0 ? consultations[0].startTime : null,
-        lastHealthScan: healthScans.length > 0 ? healthScans[0]?.consultationId : null
+        lastHealthScan: healthScans.length > 0 ? healthScans[0]?.consultationId : null,
+        lastMedicalRecord: medicalHistory.length > 0 ? medicalHistory[0].createdAt : null
       };
 
       // Get emergency contact and insurance info
@@ -286,10 +312,16 @@ export class MedicalRecordsController {
             startTime: c.startTime,
             endTime: c.endTime,
             consultationCode: c.consultationCode,
+            isPublic: c.isPublic,
+            notes: c.notes,
+            diagnosis: c.diagnosis,
+            treatment: c.treatment,
+            followUpDate: c.followUpDate,
             doctor: c.doctor,
             healthScan: c.healthScan
           })),
           healthScans,
+          medicalHistory,
           healthTrends,
           summary
         }
