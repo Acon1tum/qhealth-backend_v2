@@ -20,6 +20,7 @@ import authRoutes from './modules/auth/auth.routes';
 import { medicalRecordsRoutes } from './modules/medical-records/medical-records.routes';
 import { appointmentsRoutes } from './modules/appointments/appointments.routes';
 import { consultationsRoutes } from './modules/consultations/consultations.routes';
+import { selfCheckRoutes } from './modules/self-check/self-check.routes';
 
 // Import middleware
 import { errorHandler, notFoundHandler } from './shared/middleware/error-handler';
@@ -175,10 +176,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/email', emailRoutes);
 app.use('/api/medical-records', medicalRecordsRoutes);
 app.use('/api/appointments', appointmentsRoutes);
-app.use('/api/consultations', consultationsRoutes);  
-app.use('/api/medical-records', medicalRecordsRoutes);
-app.use('/api/appointments', appointmentsRoutes);
-app.use('/api/consultations', consultationsRoutes);  
+app.use('/api/consultations', consultationsRoutes);
+app.use('/api/self-check', selfCheckRoutes);  
 
 // Serve static files with enhanced security
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
