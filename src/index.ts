@@ -21,6 +21,7 @@ import { medicalRecordsRoutes } from './modules/medical-records/medical-records.
 import { appointmentsRoutes } from './modules/appointments/appointments.routes';
 import { consultationsRoutes } from './modules/consultations/consultations.routes';
 import { prescriptionsRoutes } from './modules/prescriptions/prescriptions.routes';
+import { diagnosesRoutes } from './modules/diagnoses/diagnoses.routes';
 import { selfCheckRoutes } from './modules/self-check/self-check.routes';
 
 // Import middleware
@@ -179,6 +180,7 @@ app.use('/api/medical-records', medicalRecordsRoutes);
 app.use('/api/appointments', appointmentsRoutes);
 app.use('/api/consultations', consultationsRoutes);
 app.use('/api/prescriptions', prescriptionsRoutes);
+app.use('/api/diagnoses', diagnosesRoutes);
 app.use('/api/self-check', selfCheckRoutes);  
 
 // Serve static files with enhanced security
