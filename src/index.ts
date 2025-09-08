@@ -20,6 +20,7 @@ import authRoutes from './modules/auth/auth.routes';
 import { medicalRecordsRoutes } from './modules/medical-records/medical-records.routes';
 import { appointmentsRoutes } from './modules/appointments/appointments.routes';
 import { consultationsRoutes } from './modules/consultations/consultations.routes';
+import { prescriptionsRoutes } from './modules/prescriptions/prescriptions.routes';
 import { selfCheckRoutes } from './modules/self-check/self-check.routes';
 
 // Import middleware
@@ -177,6 +178,7 @@ app.use('/api/email', emailRoutes);
 app.use('/api/medical-records', medicalRecordsRoutes);
 app.use('/api/appointments', appointmentsRoutes);
 app.use('/api/consultations', consultationsRoutes);
+app.use('/api/prescriptions', prescriptionsRoutes);
 app.use('/api/self-check', selfCheckRoutes);  
 
 // Serve static files with enhanced security

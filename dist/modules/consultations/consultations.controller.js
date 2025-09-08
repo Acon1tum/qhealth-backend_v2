@@ -97,6 +97,81 @@ class ConsultationsController {
             }
         });
     }
+    // Create consultation directly from doctor-meet (without appointment)
+    createDirectConsultation(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            try {
+                const { patientId, startTime, endTime, notes, diagnosis, treatment, followUpDate } = req.body;
+                const doctorId = req.user.id;
+                // Verify user is a doctor
+                if (req.user.role !== client_2.Role.DOCTOR) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'Only doctors can create consultations'
+                    });
+                }
+                // Verify patient exists
+                const patient = yield prisma.user.findUnique({
+                    where: { id: parseInt(patientId) },
+                    include: { patientInfo: true }
+                });
+                if (!patient || patient.role !== 'PATIENT') {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Patient not found'
+                    });
+                }
+                // Generate unique consultation code
+                const consultationCode = this.generateDirectConsultationCode(doctorId, parseInt(patientId));
+                // Create consultation
+                const consultation = yield prisma.consultation.create({
+                    data: {
+                        doctorId,
+                        patientId: parseInt(patientId),
+                        startTime: new Date(startTime || new Date()),
+                        endTime: endTime ? new Date(endTime) : null,
+                        consultationCode,
+                        notes: notes || 'Direct consultation from doctor-meet',
+                        diagnosis: diagnosis || null,
+                        treatment: treatment || null,
+                        followUpDate: followUpDate ? new Date(followUpDate) : null
+                    },
+                    include: {
+                        patient: {
+                            select: {
+                                id: true,
+                                email: true,
+                                patientInfo: { select: { fullName: true } }
+                            }
+                        },
+                        doctor: {
+                            select: {
+                                id: true,
+                                email: true,
+                                doctorInfo: { select: { firstName: true, lastName: true } }
+                            }
+                        }
+                    }
+                });
+                // Audit log
+                yield audit_service_1.AuditService.logUserActivity(doctorId, 'CREATE_DIRECT_CONSULTATION', 'DATA_MODIFICATION', `Direct consultation created for patient ${(_a = consultation.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'CONSULTATION', consultation.id.toString());
+                res.status(201).json({
+                    success: true,
+                    message: 'Direct consultation created successfully',
+                    data: consultation
+                });
+            }
+            catch (error) {
+                console.error('Error creating direct consultation:', error);
+                res.status(500).json({
+                    success: false,
+                    message: 'Failed to create direct consultation',
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                });
+            }
+        });
+    }
     // Get consultation details
     getConsultation(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -580,6 +655,15 @@ class ConsultationsController {
         const hourSuffix = appointment.requestedTime.split(':')[0].padStart(2, '0');
         const randomChars = Math.random().toString(36).substring(2, 5).toUpperCase();
         const consultationCode = `QH${daySuffix}${hourSuffix}${randomChars}`;
+        return consultationCode;
+    }
+    // Private method to generate a unique consultation code for direct consultations
+    generateDirectConsultationCode(doctorId, patientId) {
+        // Create a 9-character code: DM + 2 digits from doctor ID + 2 digits from patient ID + 3 random chars
+        const doctorSuffix = (doctorId % 100).toString().padStart(2, '0');
+        const patientSuffix = (patientId % 100).toString().padStart(2, '0');
+        const randomChars = Math.random().toString(36).substring(2, 5).toUpperCase();
+        const consultationCode = `DM${doctorSuffix}${patientSuffix}${randomChars}`;
         return consultationCode;
     }
 }

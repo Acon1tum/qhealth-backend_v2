@@ -13,6 +13,8 @@ router.use(auth_middleware_1.authenticateToken);
 router.use(auth_middleware_1.requireAuth);
 // Create consultation from appointment (doctors only)
 router.post('/create', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR]), consultationsController.createConsultation.bind(consultationsController));
+// Create direct consultation from doctor-meet (doctors only)
+router.post('/create-direct', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR]), consultationsController.createDirectConsultation.bind(consultationsController));
 // Get consultation details (patients and doctors with access)
 router.get('/:consultationId', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR, client_1.Role.PATIENT]), consultationsController.getConsultation.bind(consultationsController));
 // Update consultation (doctors only)

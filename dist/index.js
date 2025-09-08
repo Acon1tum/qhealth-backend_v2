@@ -55,6 +55,7 @@ const auth_routes_1 = __importDefault(require("./modules/auth/auth.routes"));
 const medical_records_routes_1 = require("./modules/medical-records/medical-records.routes");
 const appointments_routes_1 = require("./modules/appointments/appointments.routes");
 const consultations_routes_1 = require("./modules/consultations/consultations.routes");
+const prescriptions_routes_1 = require("./modules/prescriptions/prescriptions.routes");
 const self_check_routes_1 = require("./modules/self-check/self-check.routes");
 // Import middleware
 const error_handler_1 = require("./shared/middleware/error-handler");
@@ -196,6 +197,7 @@ app.use('/api/email', email_routes_1.emailRoutes);
 app.use('/api/medical-records', medical_records_routes_1.medicalRecordsRoutes);
 app.use('/api/appointments', appointments_routes_1.appointmentsRoutes);
 app.use('/api/consultations', consultations_routes_1.consultationsRoutes);
+app.use('/api/prescriptions', prescriptions_routes_1.prescriptionsRoutes);
 app.use('/api/self-check', self_check_routes_1.selfCheckRoutes);
 // Serve static files with enhanced security
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads'), {

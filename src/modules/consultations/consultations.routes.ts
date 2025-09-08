@@ -16,6 +16,12 @@ router.post('/create',
   consultationsController.createConsultation.bind(consultationsController)
 );
 
+// Create direct consultation from doctor-meet (doctors only)
+router.post('/create-direct', 
+  requireRole([Role.DOCTOR]), 
+  consultationsController.createDirectConsultation.bind(consultationsController)
+);
+
 // Get consultation details (patients and doctors with access)
 router.get('/:consultationId', 
   requireRole([Role.DOCTOR, Role.PATIENT]), 
