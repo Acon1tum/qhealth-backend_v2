@@ -50,6 +50,12 @@ model User {
   // HealthScan privacy and sharing relations
   sharedHealthScans      HealthScanSharing[] @relation("SharedHealthScans") // Health scans shared with this doctor
   healthScanSharing      HealthScanSharing[] @relation("HealthScanSharing") // Health scans shared by this user
+  
+  // Prescription and diagnosis relations
+  prescriptionsAsDoctor  Prescription[] @relation("DoctorPrescriptions") // Prescriptions written by this doctor
+  prescriptionsAsPatient Prescription[] @relation("PatientPrescriptions") // Prescriptions for this patient
+  diagnosesAsDoctor      Diagnosis[] @relation("DoctorDiagnoses") // Diagnoses made by this doctor
+  diagnosesAsPatient      Diagnosis[] @relation("PatientDiagnoses") // Diagnoses for this patient
 }
 
 // Enum for different user roles
@@ -130,6 +136,8 @@ model Consultation {
   privacySettings ConsultationPrivacy[] // Privacy settings for this consultation
   sharedWith     ConsultationSharing[] // Which doctors can access this consultation
   medicalHistory PatientMedicalHistory[] // Medical history records related to this consultation
+  prescriptions  Prescription[] // Prescriptions issued during this consultation
+  diagnoses      Diagnosis[] // Diagnoses made during this consultation
 }
 
 // HealthScan model that stores health scan data (e.g., heart rate, stress level, etc.)
@@ -538,4 +546,83 @@ enum MedicalRecordType {
   FAMILY_HISTORY     // Family medical history
   LIFESTYLE          // Lifestyle factors
   VACCINATIONS       // Vaccination history
+}
+
+// Prescription model for managing medication prescriptions
+model Prescription {
+  id              Int      @id @default(autoincrement()) // Primary key
+  patientId       Int      // Reference to the patient
+  doctorId        Int      // Reference to the doctor who prescribed
+  consultationId  Int?     // Optional reference to the consultation
+  medicationName  String   // Name of the medication
+  dosage          String   // Dosage instructions (e.g., "500mg twice daily")
+  frequency       String   // How often to take (e.g., "twice daily", "as needed")
+  duration        String   // Duration of treatment (e.g., "7 days", "until finished")
+  instructions    String?  // Additional instructions for the patient
+  quantity        Int?     // Quantity prescribed
+  refills         Int      @default(0) // Number of refills allowed
+  isActive        Boolean  @default(true) // Whether the prescription is still active
+  prescribedAt    DateTime @default(now()) // When the prescription was written
+  expiresAt       DateTime? // When the prescription expires
+  notes           String?  // Doctor's notes about the prescription
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  patient      User         @relation("PatientPrescriptions", fields: [patientId], references: [id])
+  doctor       User         @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
+  consultation Consultation? @relation(fields: [consultationId], references: [id])
+  
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([consultationId])
+  @@index([isActive])
+  @@index([prescribedAt])
+}
+
+// Diagnosis model for managing medical diagnoses
+model Diagnosis {
+  id              Int      @id @default(autoincrement()) // Primary key
+  patientId       Int      // Reference to the patient
+  doctorId        Int      // Reference to the doctor who made the diagnosis
+  consultationId  Int?     // Optional reference to the consultation
+  diagnosisCode   String?  // ICD-10 or other medical coding system code
+  diagnosisName   String   // Name of the diagnosis/condition
+  description     String?  // Detailed description of the diagnosis
+  severity        DiagnosisSeverity @default(MILD) // Severity of the condition
+  status          DiagnosisStatus @default(ACTIVE) // Current status of the diagnosis
+  onsetDate       DateTime? // When the condition started
+  diagnosedAt     DateTime @default(now()) // When the diagnosis was made
+  resolvedAt      DateTime? // When the diagnosis was resolved (if applicable)
+  notes           String?  // Additional notes about the diagnosis
+  isPrimary       Boolean  @default(false) // Whether this is the primary diagnosis
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  patient      User         @relation("PatientDiagnoses", fields: [patientId], references: [id])
+  doctor       User         @relation("DoctorDiagnoses", fields: [doctorId], references: [id])
+  consultation Consultation? @relation(fields: [consultationId], references: [id])
+  
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([consultationId])
+  @@index([diagnosisCode])
+  @@index([status])
+  @@index([diagnosedAt])
+}
+
+// Diagnosis Severity enum
+enum DiagnosisSeverity {
+  MILD       // Mild condition
+  MODERATE   // Moderate condition
+  SEVERE     // Severe condition
+  CRITICAL   // Critical/life-threatening condition
+}
+
+// Diagnosis Status enum
+enum DiagnosisStatus {
+  ACTIVE     // Currently active diagnosis
+  RESOLVED   // Diagnosis has been resolved
+  CHRONIC    // Chronic condition (ongoing)
+  SUSPECTED  // Suspected but not confirmed
+  RULED_OUT  // Condition was suspected but ruled out
 }
