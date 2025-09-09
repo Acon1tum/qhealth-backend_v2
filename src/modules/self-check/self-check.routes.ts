@@ -6,7 +6,10 @@ import { Role } from '@prisma/client';
 const router = Router();
 const selfCheckController = new SelfCheckController();
 
-// Apply authentication middleware to all routes
+// Test database connection (no auth required for testing)
+router.get('/test-db', selfCheckController.testDatabaseConnection.bind(selfCheckController));
+
+// Apply authentication middleware to all other routes
 router.use(authenticateToken);
 router.use(requireAuth);
 

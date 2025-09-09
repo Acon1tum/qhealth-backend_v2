@@ -6,6 +6,40 @@ import { AuditService } from '../../shared/services/audit.service';
 const prisma = new PrismaClient();
 
 export class SelfCheckController {
+  // Test database connection
+  async testDatabaseConnection(req: Request, res: Response) {
+    try {
+      console.log('🔍 Testing database connection...');
+      
+      // Test basic database connection
+      const userCount = await prisma.user.count();
+      const healthScanCount = await prisma.healthScan.count();
+      const consultationCount = await prisma.consultation.count();
+      
+      console.log('✅ Database connection successful. User count:', userCount);
+      console.log('✅ Health scan count:', healthScanCount);
+      console.log('✅ Consultation count:', consultationCount);
+      
+      res.json({
+        success: true,
+        message: 'Database connection successful',
+        data: {
+          userCount,
+          healthScanCount,
+          consultationCount,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error('❌ Database connection failed:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Database connection failed',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
   // Save self-check health scan results to user profile
   async saveSelfCheckResults(req: Request, res: Response) {
     try {
@@ -13,10 +47,18 @@ export class SelfCheckController {
       const userId = (req as any).user.id;
       const userRole = (req as any).user.role;
 
-      // Debug logging
-      console.log('🔍 Received health data:', JSON.stringify(healthData, null, 2));
+      // Enhanced debug logging
+      console.log('🔍 ===== FACE SCAN SAVE REQUEST =====');
+      console.log('🔍 Request body:', JSON.stringify(req.body, null, 2));
+      console.log('🔍 User ID:', userId);
+      console.log('🔍 User Role:', userRole);
+      console.log('🔍 Health data:', JSON.stringify(healthData, null, 2));
       console.log('🔍 Health data keys:', Object.keys(healthData || {}));
       console.log('🔍 Health data values:', Object.values(healthData || {}));
+      console.log('🔍 Scan results:', JSON.stringify(scanResults, null, 2));
+      console.log('🔍 Scan results count:', scanResults ? scanResults.length : 'undefined');
+      console.log('🔍 Scan type:', scanType);
+      console.log('🔍 Timestamp:', timestamp);
 
       // Verify user is a patient
       if (userRole !== Role.PATIENT) {
@@ -26,9 +68,28 @@ export class SelfCheckController {
         });
       }
 
+      // Validate required data
+      if (!healthData || Object.keys(healthData).length === 0) {
+        console.error('❌ No health data provided');
+        return res.status(400).json({
+          success: false,
+          message: 'Health data is required'
+        });
+      }
+
+      if (!scanResults || scanResults.length === 0) {
+        console.error('❌ No scan results provided');
+        return res.status(400).json({
+          success: false,
+          message: 'Scan results are required'
+        });
+      }
+
       // Create a self-check consultation record
       const consultationCode = this.generateSelfCheckCode(userId);
+      console.log('🔍 Generated consultation code:', consultationCode);
       
+      console.log('🔍 Creating consultation record...');
       const consultation = await prisma.consultation.create({
         data: {
           doctorId: userId, // For self-check, the patient is both doctor and patient
@@ -43,52 +104,59 @@ export class SelfCheckController {
           followUpDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
         }
       });
+      console.log('✅ Consultation created with ID:', consultation.id);
 
       // Create health scan record
+      console.log('🔍 Creating health scan record...');
+      const healthScanData = {
+        consultationId: consultation.id,
+        // Map the health data to the schema fields
+        bloodPressure: healthData.bloodPressure || null,
+        heartRate: healthData.heartRate || null,
+        spO2: healthData.spO2 || null,
+        respiratoryRate: healthData.respiratoryRate || null,
+        stressLevel: healthData.stressLevel || null,
+        stressScore: healthData.stressScore || null,
+        hrvSdnn: healthData.hrvSdnn || null,
+        hrvRmsdd: healthData.hrvRmsdd || null,
+        generalWellness: healthData.generalWellness || null,
+        
+        // Health Risk Assessment
+        generalRisk: healthData.generalRisk || null,
+        coronaryHeartDisease: healthData.coronaryHeartDisease || null,
+        congestiveHeartFailure: healthData.congestiveHeartFailure || null,
+        intermittentClaudication: healthData.intermittentClaudication || null,
+        strokeRisk: healthData.strokeRisk || null,
+        
+        // COVID-19 Risk
+        covidRisk: healthData.covidRisk || null,
+        
+        // Additional health parameters (if available)
+        height: healthData.height || null,
+        weight: healthData.weight || null,
+        smoker: healthData.smoker || null,
+        hypertension: healthData.hypertension || null,
+        bpMedication: healthData.bpMedication || null,
+        diabetic: healthData.diabetic || null,
+        waistCircumference: healthData.waistCircumference || null,
+        heartDisease: healthData.heartDisease || null,
+        depression: healthData.depression || null,
+        totalCholesterol: healthData.totalCholesterol || null,
+        hdl: healthData.hdl || null,
+        parentalHypertension: healthData.parentalHypertension || null,
+        physicalActivity: healthData.physicalActivity || null,
+        healthyDiet: healthData.healthyDiet || null,
+        antiHypertensive: healthData.antiHypertensive || null,
+        historyBloodGlucose: healthData.historyBloodGlucose || null,
+        historyFamilyDiabetes: healthData.historyFamilyDiabetes || null
+      };
+      
+      console.log('🔍 Health scan data to be saved:', JSON.stringify(healthScanData, null, 2));
+      
       const healthScan = await prisma.healthScan.create({
-        data: {
-          consultationId: consultation.id,
-          // Map the health data to the schema fields
-          bloodPressure: healthData.bloodPressure || null,
-          heartRate: healthData.heartRate || null,
-          spO2: healthData.spO2 || null,
-          respiratoryRate: healthData.respiratoryRate || null,
-          stressLevel: healthData.stressLevel || null,
-          stressScore: healthData.stressScore || null,
-          hrvSdnn: healthData.hrvSdnn || null,
-          hrvRmsdd: healthData.hrvRmsdd || null,
-          generalWellness: healthData.generalWellness || null,
-          
-          // Health Risk Assessment
-          generalRisk: healthData.generalRisk || null,
-          coronaryHeartDisease: healthData.coronaryHeartDisease || null,
-          congestiveHeartFailure: healthData.congestiveHeartFailure || null,
-          intermittentClaudication: healthData.intermittentClaudication || null,
-          strokeRisk: healthData.strokeRisk || null,
-          
-          // COVID-19 Risk
-          covidRisk: healthData.covidRisk || null,
-          
-          // Additional health parameters (if available)
-          height: healthData.height || null,
-          weight: healthData.weight || null,
-          smoker: healthData.smoker || null,
-          hypertension: healthData.hypertension || null,
-          bpMedication: healthData.bpMedication || null,
-          diabetic: healthData.diabetic || null,
-          waistCircumference: healthData.waistCircumference || null,
-          heartDisease: healthData.heartDisease || null,
-          depression: healthData.depression || null,
-          totalCholesterol: healthData.totalCholesterol || null,
-          hdl: healthData.hdl || null,
-          parentalHypertension: healthData.parentalHypertension || null,
-          physicalActivity: healthData.physicalActivity || null,
-          healthyDiet: healthData.healthyDiet || null,
-          antiHypertensive: healthData.antiHypertensive || null,
-          historyBloodGlucose: healthData.historyBloodGlucose || null,
-          historyFamilyDiabetes: healthData.historyFamilyDiabetes || null
-        }
+        data: healthScanData
       });
+      console.log('✅ Health scan created with ID:', healthScan.id);
 
       // Create medical history record for the self-check
       const medicalHistory = await prisma.patientMedicalHistory.create({
@@ -116,7 +184,7 @@ export class SelfCheckController {
         healthScan.id.toString()
       );
 
-      res.status(201).json({
+      const responseData = {
         success: true,
         message: 'Self-check results saved successfully',
         data: {
@@ -126,10 +194,19 @@ export class SelfCheckController {
           consultationCode: consultation.consultationCode,
           timestamp: new Date(timestamp || new Date())
         }
-      });
+      };
+      
+      console.log('✅ ===== SUCCESS RESPONSE =====');
+      console.log('✅ Response data:', JSON.stringify(responseData, null, 2));
+      
+      res.status(201).json(responseData);
 
     } catch (error) {
-      console.error('Error saving self-check results:', error);
+      console.error('❌ ===== ERROR SAVING FACE SCAN RESULTS =====');
+      console.error('❌ Error details:', error);
+      console.error('❌ Error message:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      
       res.status(500).json({
         success: false,
         message: 'Failed to save self-check results',

@@ -8,7 +8,9 @@ const client_1 = require("@prisma/client");
 const router = (0, express_1.Router)();
 exports.selfCheckRoutes = router;
 const selfCheckController = new self_check_controller_1.SelfCheckController();
-// Apply authentication middleware to all routes
+// Test database connection (no auth required for testing)
+router.get('/test-db', selfCheckController.testDatabaseConnection.bind(selfCheckController));
+// Apply authentication middleware to all other routes
 router.use(auth_middleware_1.authenticateToken);
 router.use(auth_middleware_1.requireAuth);
 // Save self-check results (patients only)
