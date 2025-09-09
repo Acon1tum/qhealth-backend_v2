@@ -186,6 +186,15 @@ export interface IRegisterRequest {
   medicalHistory?: string;
   allergies?: string;
   medications?: string;
+  // Emergency Contact (for patient)
+  emergencyContactName?: string;
+  emergencyContactRelationship?: string;
+  emergencyContactNumber?: string;
+  emergencyContactAddress?: string;
+  // Insurance Info (for patient)
+  insuranceProviderName?: string;
+  insurancePolicyNumber?: string;
+  insuranceContact?: string;
 }
 
 export interface IAuthResponse {

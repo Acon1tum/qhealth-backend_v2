@@ -73,7 +73,9 @@ class AuthService {
      */
     static register(registerData) {
         return __awaiter(this, void 0, void 0, function* () {
-            const { email, password, role, firstName, lastName, specialization, qualifications, experience, fullName, gender, dateOfBirth, contactNumber, address, bio, weight, height, bloodType, medicalHistory, allergies, medications, } = registerData;
+            const { email, password, role, firstName, lastName, specialization, qualifications, experience, fullName, gender, dateOfBirth, contactNumber, address, bio, weight, height, bloodType, medicalHistory, allergies, medications, 
+            // New: Emergency contact & Insurance
+            emergencyContactName, emergencyContactRelationship, emergencyContactNumber, emergencyContactAddress, insuranceProviderName, insurancePolicyNumber, insuranceContact, } = registerData;
             // Validate password strength
             if (!this.validatePasswordStrength(password)) {
                 throw new error_handler_1.AppError('Password does not meet security requirements', 400, error_handler_1.ErrorTypes.VALIDATION_ERROR);
@@ -122,7 +124,7 @@ class AuthService {
                     if (!fullName || !gender || !dateOfBirth || !contactNumber || !address || !weight || !height || !bloodType) {
                         throw new error_handler_1.AppError('Patient registration requires fullName, gender, dateOfBirth, contactNumber, address, weight, height, and bloodType', 400, error_handler_1.ErrorTypes.VALIDATION_ERROR);
                     }
-                    yield tx.patientInfo.create({
+                    const createdPatient = yield tx.patientInfo.create({
                         data: {
                             userId: user.id,
                             fullName,
@@ -138,6 +140,29 @@ class AuthService {
                             medications: medications || '',
                         },
                     });
+                    // Optional: Emergency Contact
+                    if (emergencyContactName && emergencyContactRelationship && emergencyContactNumber) {
+                        yield tx.emergencyContact.create({
+                            data: {
+                                patientId: user.id,
+                                contactName: emergencyContactName,
+                                relationship: emergencyContactRelationship,
+                                contactNumber: emergencyContactNumber,
+                                contactAddress: emergencyContactAddress || null,
+                            },
+                        });
+                    }
+                    // Optional: Insurance Info
+                    if (insuranceProviderName && insurancePolicyNumber && insuranceContact) {
+                        yield tx.insuranceInfo.create({
+                            data: {
+                                patientId: user.id,
+                                providerName: insuranceProviderName,
+                                policyNumber: insurancePolicyNumber,
+                                insuranceContact: insuranceContact,
+                            },
+                        });
+                    }
                 }
                 return user;
             }));

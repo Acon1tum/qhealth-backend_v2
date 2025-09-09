@@ -99,6 +99,14 @@ export class AuthService {
       medicalHistory,
       allergies,
       medications,
+      // New: Emergency contact & Insurance
+      emergencyContactName,
+      emergencyContactRelationship,
+      emergencyContactNumber,
+      emergencyContactAddress,
+      insuranceProviderName,
+      insurancePolicyNumber,
+      insuranceContact,
     } = registerData;
 
     // Validate password strength
@@ -155,7 +163,7 @@ export class AuthService {
           throw new AppError('Patient registration requires fullName, gender, dateOfBirth, contactNumber, address, weight, height, and bloodType', 400, ErrorTypes.VALIDATION_ERROR);
         }
 
-        await tx.patientInfo.create({
+        const createdPatient = await tx.patientInfo.create({
           data: {
             userId: user.id,
             fullName,
@@ -171,6 +179,31 @@ export class AuthService {
             medications: medications || '',
           },
         });
+
+        // Optional: Emergency Contact
+        if (emergencyContactName && emergencyContactRelationship && emergencyContactNumber) {
+          await tx.emergencyContact.create({
+            data: {
+              patientId: user.id,
+              contactName: emergencyContactName,
+              relationship: emergencyContactRelationship,
+              contactNumber: emergencyContactNumber,
+              contactAddress: emergencyContactAddress || null,
+            },
+          });
+        }
+
+        // Optional: Insurance Info
+        if (insuranceProviderName && insurancePolicyNumber && insuranceContact) {
+          await tx.insuranceInfo.create({
+            data: {
+              patientId: user.id,
+              providerName: insuranceProviderName,
+              policyNumber: insurancePolicyNumber,
+              insuranceContact: insuranceContact,
+            },
+          });
+        }
       }
 
       return user;
