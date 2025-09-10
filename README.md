@@ -259,6 +259,3 @@ For support and questions, please open an issue in the repository or contact the
 ---
 
 **Note**: This is a healthcare application. Ensure all data handling complies with relevant healthcare data protection regulations (HIPAA, GDPR, etc.) in your jurisdiction.
-
-
-
