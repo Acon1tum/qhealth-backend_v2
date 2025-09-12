@@ -266,6 +266,55 @@ class ConsultationsController {
                         updatedAt: new Date()
                     }
                 });
+                // If privacy flag provided, mirror delete-and-transfer behavior
+                if (typeof isPublic === 'boolean') {
+                    yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
+                        if (isPublic) {
+                            yield tx.consultationPrivacy.deleteMany({
+                                where: { consultationId: Number(consultationId) }
+                            });
+                            yield tx.consultationSharing.updateMany({
+                                where: { consultationId: Number(consultationId) },
+                                data: { isActive: true }
+                            });
+                            yield tx.consultationSharing.upsert({
+                                where: {
+                                    consultationId_sharedWithDoctorId: {
+                                        consultationId: Number(consultationId),
+                                        sharedWithDoctorId: updatedConsultation.doctorId
+                                    }
+                                },
+                                update: { isActive: true, accessLevel: client_2.AccessLevel.READ_ONLY, sharedBy: userId, expiresAt: null },
+                                create: {
+                                    consultationId: Number(consultationId),
+                                    sharedWithDoctorId: updatedConsultation.doctorId,
+                                    accessLevel: client_2.AccessLevel.READ_ONLY,
+                                    sharedBy: userId,
+                                    expiresAt: null
+                                }
+                            });
+                        }
+                        else {
+                            yield tx.consultationSharing.deleteMany({
+                                where: { consultationId: Number(consultationId) }
+                            });
+                            yield tx.consultationPrivacy.upsert({
+                                where: {
+                                    consultationId_settingType: {
+                                        consultationId: Number(consultationId),
+                                        settingType: client_2.PrivacySettingType.PUBLIC_READ
+                                    }
+                                },
+                                update: { isEnabled: false },
+                                create: {
+                                    consultationId: Number(consultationId),
+                                    settingType: client_2.PrivacySettingType.PUBLIC_READ,
+                                    isEnabled: false
+                                }
+                            });
+                        }
+                    }));
+                }
                 // Audit log
                 yield audit_service_1.AuditService.logUserActivity(userId, 'UPDATE_CONSULTATION', 'DATA_MODIFICATION', `Consultation ${consultationId} updated`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'CONSULTATION', consultationId);
                 res.json({
@@ -394,7 +443,7 @@ class ConsultationsController {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const { consultationId } = req.params;
-                const { privacySettings } = req.body;
+                const { privacySettings, isPublic } = req.body;
                 const userId = req.user.id;
                 // Get consultation
                 const consultation = yield prisma.consultation.findFirst({
@@ -414,30 +463,92 @@ class ConsultationsController {
                         message: 'You do not have permission to update privacy settings'
                     });
                 }
-                // Update privacy settings
-                for (const setting of privacySettings) {
-                    yield prisma.consultationPrivacy.upsert({
-                        where: {
-                            consultationId_settingType: {
-                                consultationId: Number(consultationId),
-                                settingType: setting.settingType
-                            }
-                        },
-                        update: {
-                            isEnabled: setting.isEnabled
-                        },
-                        create: {
-                            consultationId: Number(consultationId),
-                            settingType: setting.settingType,
-                            isEnabled: setting.isEnabled
+                // Optional: simple public/private toggle maps to PUBLIC_READ privacy setting and
+                // transfers records between ConsultationPrivacy and ConsultationSharing
+                if (typeof isPublic === 'boolean') {
+                    const result = yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
+                        // Update consultation flag
+                        yield tx.consultation.update({
+                            where: { id: Number(consultationId) },
+                            data: { isPublic }
+                        });
+                        if (isPublic) {
+                            // PUBLIC: delete privacy rows, ensure sharing
+                            const deletedPrivacy = yield tx.consultationPrivacy.deleteMany({
+                                where: { consultationId: Number(consultationId) }
+                            });
+                            yield tx.consultationSharing.updateMany({
+                                where: { consultationId: Number(consultationId) },
+                                data: { isActive: true }
+                            });
+                            yield tx.consultationSharing.upsert({
+                                where: {
+                                    consultationId_sharedWithDoctorId: {
+                                        consultationId: Number(consultationId),
+                                        sharedWithDoctorId: consultation.doctorId
+                                    }
+                                },
+                                update: { isActive: true, accessLevel: client_2.AccessLevel.READ_ONLY, sharedBy: userId, expiresAt: null },
+                                create: {
+                                    consultationId: Number(consultationId),
+                                    sharedWithDoctorId: consultation.doctorId,
+                                    accessLevel: client_2.AccessLevel.READ_ONLY,
+                                    sharedBy: userId,
+                                    expiresAt: null
+                                }
+                            });
+                            return { deletedPrivacy: deletedPrivacy.count, deletedSharing: 0 };
                         }
-                    });
+                        else {
+                            // PRIVATE: delete sharing rows, ensure privacy PUBLIC_READ disabled
+                            const deletedSharing = yield tx.consultationSharing.deleteMany({
+                                where: { consultationId: Number(consultationId) }
+                            });
+                            yield tx.consultationPrivacy.upsert({
+                                where: {
+                                    consultationId_settingType: {
+                                        consultationId: Number(consultationId),
+                                        settingType: client_2.PrivacySettingType.PUBLIC_READ
+                                    }
+                                },
+                                update: { isEnabled: false },
+                                create: {
+                                    consultationId: Number(consultationId),
+                                    settingType: client_2.PrivacySettingType.PUBLIC_READ,
+                                    isEnabled: false
+                                }
+                            });
+                            return { deletedPrivacy: 0, deletedSharing: deletedSharing.count };
+                        }
+                    }));
+                    // Include counts in response message for visibility
+                    req._privacyMutationCounts = result;
+                }
+                // Advanced privacy settings array support (optional)
+                if (Array.isArray(privacySettings)) {
+                    for (const setting of privacySettings) {
+                        yield prisma.consultationPrivacy.upsert({
+                            where: {
+                                consultationId_settingType: {
+                                    consultationId: Number(consultationId),
+                                    settingType: setting.settingType
+                                }
+                            },
+                            update: { isEnabled: setting.isEnabled },
+                            create: {
+                                consultationId: Number(consultationId),
+                                settingType: setting.settingType,
+                                isEnabled: setting.isEnabled
+                            }
+                        });
+                    }
                 }
                 // Audit log
                 yield audit_service_1.AuditService.logUserActivity(userId, 'UPDATE_CONSULTATION_PRIVACY', 'DATA_MODIFICATION', `Privacy settings updated for consultation ${consultationId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'CONSULTATION', consultationId);
                 res.json({
                     success: true,
-                    message: 'Privacy settings updated successfully'
+                    message: 'Privacy settings updated successfully',
+                    meta: req._privacyMutationCounts || undefined
                 });
             }
             catch (error) {
@@ -550,8 +661,17 @@ class ConsultationsController {
             // Doctor can see health scans from consultations they conducted
             if (consultation.doctorId === userId)
                 return true;
-            // Check if consultation is public
+            // Check if consultation is public (via flag or PUBLIC_READ privacy setting)
             if (consultation.isPublic)
+                return true;
+            const publicRead = yield prisma.consultationPrivacy.findFirst({
+                where: {
+                    consultationId: consultation.id,
+                    settingType: client_2.PrivacySettingType.PUBLIC_READ,
+                    isEnabled: true
+                }
+            });
+            if (publicRead)
                 return true;
             // Check if consultation is shared with this doctor
             if (userRole === client_2.Role.DOCTOR) {

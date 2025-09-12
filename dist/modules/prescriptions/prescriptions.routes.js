@@ -16,6 +16,8 @@ router.use(auth_middleware_1.authenticateToken);
 router.use(auth_middleware_1.requireAuth);
 // Get available patients (doctors only)
 router.get('/patients', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR]), prescriptionsController.getAvailablePatients.bind(prescriptionsController));
+// Get patient info by user ID (for doctor-meet component)
+router.get('/patient-info/:userId', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR]), prescriptionsController.getPatientInfoByUserId.bind(prescriptionsController));
 // Create prescription (doctors only)
 router.post('/create', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR]), prescriptionsController.createPrescription.bind(prescriptionsController));
 // Get prescriptions for a patient (patients and doctors with access)

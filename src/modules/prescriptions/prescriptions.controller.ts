@@ -48,6 +48,49 @@ export class PrescriptionsController {
       });
     }
   }
+
+  // Get patient info by user ID (for doctor-meet component)
+  async getPatientInfoByUserId(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = parseInt(req.params.userId);
+      const doctorId = (req as any).user.id;
+
+      if (isNaN(userId)) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid user ID'
+        });
+        return;
+      }
+
+      // Get patient info by user ID
+      const patientInfo = await prisma.patientInfo.findFirst({
+        where: { userId: userId }
+      });
+
+      if (!patientInfo) {
+        res.status(404).json({
+          success: false,
+          message: 'Patient not found'
+        });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Patient info retrieved successfully',
+        data: patientInfo
+      });
+
+    } catch (error) {
+      console.error('Error getting patient info:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? error : undefined
+      });
+    }
+  }
   
   // Create a new prescription
   async createPrescription(req: Request, res: Response): Promise<void> {

@@ -16,6 +16,12 @@ router.get('/patients',
   prescriptionsController.getAvailablePatients.bind(prescriptionsController)
 );
 
+// Get patient info by user ID (for doctor-meet component)
+router.get('/patient-info/:userId', 
+  requireRole([Role.DOCTOR]), 
+  prescriptionsController.getPatientInfoByUserId.bind(prescriptionsController)
+);
+
 // Create prescription (doctors only)
 router.post('/create', 
   requireRole([Role.DOCTOR]), 

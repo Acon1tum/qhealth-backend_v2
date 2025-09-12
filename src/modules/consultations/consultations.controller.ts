@@ -293,6 +293,58 @@ export class ConsultationsController {
         }
       });
 
+      // If privacy flag provided, mirror delete-and-transfer behavior
+      if (typeof isPublic === 'boolean') {
+        await prisma.$transaction(async (tx) => {
+          if (isPublic) {
+            await tx.consultationPrivacy.deleteMany({
+              where: { consultationId: Number(consultationId) }
+            });
+
+            await tx.consultationSharing.updateMany({
+              where: { consultationId: Number(consultationId) },
+              data: { isActive: true }
+            });
+
+            await tx.consultationSharing.upsert({
+              where: {
+                consultationId_sharedWithDoctorId: {
+                  consultationId: Number(consultationId),
+                  sharedWithDoctorId: updatedConsultation.doctorId
+                }
+              },
+              update: { isActive: true, accessLevel: AccessLevel.READ_ONLY, sharedBy: userId, expiresAt: null },
+              create: {
+                consultationId: Number(consultationId),
+                sharedWithDoctorId: updatedConsultation.doctorId,
+                accessLevel: AccessLevel.READ_ONLY,
+                sharedBy: userId,
+                expiresAt: null
+              }
+            });
+          } else {
+            await tx.consultationSharing.deleteMany({
+              where: { consultationId: Number(consultationId) }
+            });
+
+            await tx.consultationPrivacy.upsert({
+              where: {
+                consultationId_settingType: {
+                  consultationId: Number(consultationId),
+                  settingType: PrivacySettingType.PUBLIC_READ
+                }
+              },
+              update: { isEnabled: false },
+              create: {
+                consultationId: Number(consultationId),
+                settingType: PrivacySettingType.PUBLIC_READ,
+                isEnabled: false
+              }
+            });
+          }
+        });
+      }
+
       // Audit log
       await AuditService.logUserActivity(
         userId,
@@ -450,7 +502,7 @@ export class ConsultationsController {
   async updateConsultationPrivacy(req: Request, res: Response) {
     try {
       const { consultationId } = req.params;
-      const { privacySettings } = req.body;
+      const { privacySettings, isPublic } = req.body as { privacySettings?: Array<{ settingType: PrivacySettingType, isEnabled: boolean }>, isPublic?: boolean };
       const userId = (req as any).user.id;
 
       // Get consultation
@@ -474,24 +526,92 @@ export class ConsultationsController {
         });
       }
 
-      // Update privacy settings
-      for (const setting of privacySettings) {
-        await prisma.consultationPrivacy.upsert({
-          where: {
-            consultationId_settingType: {
-              consultationId: Number(consultationId),
-              settingType: setting.settingType
-            }
-          },
-          update: {
-            isEnabled: setting.isEnabled
-          },
-          create: {
-            consultationId: Number(consultationId),
-            settingType: setting.settingType,
-            isEnabled: setting.isEnabled
+      // Optional: simple public/private toggle maps to PUBLIC_READ privacy setting and
+      // transfers records between ConsultationPrivacy and ConsultationSharing
+      if (typeof isPublic === 'boolean') {
+        const result = await prisma.$transaction(async (tx) => {
+          // Update consultation flag
+          await tx.consultation.update({
+            where: { id: Number(consultationId) },
+            data: { isPublic }
+          });
+
+          if (isPublic) {
+            // PUBLIC: delete privacy rows, ensure sharing
+            const deletedPrivacy = await tx.consultationPrivacy.deleteMany({
+              where: { consultationId: Number(consultationId) }
+            });
+
+            await tx.consultationSharing.updateMany({
+              where: { consultationId: Number(consultationId) },
+              data: { isActive: true }
+            });
+
+            await tx.consultationSharing.upsert({
+              where: {
+                consultationId_sharedWithDoctorId: {
+                  consultationId: Number(consultationId),
+                  sharedWithDoctorId: consultation.doctorId
+                }
+              },
+              update: { isActive: true, accessLevel: AccessLevel.READ_ONLY, sharedBy: userId, expiresAt: null },
+              create: {
+                consultationId: Number(consultationId),
+                sharedWithDoctorId: consultation.doctorId,
+                accessLevel: AccessLevel.READ_ONLY,
+                sharedBy: userId,
+                expiresAt: null
+              }
+            });
+
+            return { deletedPrivacy: deletedPrivacy.count, deletedSharing: 0 };
+          } else {
+            // PRIVATE: delete sharing rows, ensure privacy PUBLIC_READ disabled
+            const deletedSharing = await tx.consultationSharing.deleteMany({
+              where: { consultationId: Number(consultationId) }
+            });
+
+            await tx.consultationPrivacy.upsert({
+              where: {
+                consultationId_settingType: {
+                  consultationId: Number(consultationId),
+                  settingType: PrivacySettingType.PUBLIC_READ
+                }
+              },
+              update: { isEnabled: false },
+              create: {
+                consultationId: Number(consultationId),
+                settingType: PrivacySettingType.PUBLIC_READ,
+                isEnabled: false
+              }
+            });
+
+            return { deletedPrivacy: 0, deletedSharing: deletedSharing.count };
           }
         });
+
+        // Include counts in response message for visibility
+        (req as any)._privacyMutationCounts = result;
+      }
+
+      // Advanced privacy settings array support (optional)
+      if (Array.isArray(privacySettings)) {
+        for (const setting of privacySettings) {
+          await prisma.consultationPrivacy.upsert({
+            where: {
+              consultationId_settingType: {
+                consultationId: Number(consultationId),
+                settingType: setting.settingType
+              }
+            },
+            update: { isEnabled: setting.isEnabled },
+            create: {
+              consultationId: Number(consultationId),
+              settingType: setting.settingType,
+              isEnabled: setting.isEnabled
+            }
+          });
+        }
       }
 
       // Audit log
@@ -508,7 +628,8 @@ export class ConsultationsController {
 
       res.json({
         success: true,
-        message: 'Privacy settings updated successfully'
+        message: 'Privacy settings updated successfully',
+        meta: (req as any)._privacyMutationCounts || undefined
       });
 
     } catch (error) {
@@ -636,8 +757,16 @@ export class ConsultationsController {
     // Doctor can see health scans from consultations they conducted
     if (consultation.doctorId === userId) return true;
 
-    // Check if consultation is public
+    // Check if consultation is public (via flag or PUBLIC_READ privacy setting)
     if (consultation.isPublic) return true;
+    const publicRead = await prisma.consultationPrivacy.findFirst({
+      where: {
+        consultationId: consultation.id,
+        settingType: PrivacySettingType.PUBLIC_READ,
+        isEnabled: true
+      }
+    });
+    if (publicRead) return true;
 
     // Check if consultation is shared with this doctor
     if (userRole === Role.DOCTOR) {
