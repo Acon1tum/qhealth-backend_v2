@@ -289,7 +289,7 @@ export class AuthService {
   /**
    * Change password with enhanced security
    */
-  static async changePassword(userId: number, changeData: IChangePasswordRequest): Promise<void> {
+  static async changePassword(userId: string, changeData: IChangePasswordRequest): Promise<void> {
     const { currentPassword, newPassword } = changeData;
 
     // Validate new password strength
@@ -339,7 +339,7 @@ export class AuthService {
   /**
    * Update user profile with validation
    */
-  static async updateProfile(userId: number, updateData: IUpdateProfileRequest): Promise<IUserProfile> {
+  static async updateProfile(userId: string, updateData: IUpdateProfileRequest): Promise<IUserProfile> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -411,7 +411,7 @@ export class AuthService {
   /**
    * Logout user with session cleanup
    */
-  static async logout(userId: number, refreshToken?: string): Promise<void> {
+  static async logout(userId: string, refreshToken?: string): Promise<void> {
     if (refreshToken) {
       // Remove specific refresh token
       await prisma.refreshToken.deleteMany({
@@ -434,7 +434,7 @@ export class AuthService {
   /**
    * Get user profile
    */
-  static async getUserProfile(userId: number): Promise<IUserProfile> {
+  static async getUserProfile(userId: string): Promise<IUserProfile> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -478,7 +478,7 @@ export class AuthService {
   /**
    * Generate refresh token with security configuration
    */
-  private static async generateRefreshToken(userId: number): Promise<string> {
+  private static async generateRefreshToken(userId: string): Promise<string> {
     const tokenId = uuidv4();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
@@ -534,7 +534,7 @@ export class AuthService {
   /**
    * Check concurrent sessions limit
    */
-  private static async checkConcurrentSessions(userId: number): Promise<void> {
+  private static async checkConcurrentSessions(userId: string): Promise<void> {
     const activeSessions = await prisma.refreshToken.count({
       where: {
         userId,
@@ -567,7 +567,7 @@ export class AuthService {
   /**
    * Log user activity for audit trail
    */
-  private static async logUserActivity(userId: number, action: string, status: string): Promise<void> {
+  private static async logUserActivity(userId: string, action: string, status: string): Promise<void> {
     try {
       // TODO: Implement audit logging to database or external service
       console.log(`📊 User Activity: User ${userId} - ${action} - ${status} - ${new Date().toISOString()}`);
@@ -590,7 +590,7 @@ export class AuthService {
   /**
    * Reset password (for admin use)
    */
-  static async resetPassword(userId: number, newPassword: string): Promise<void> {
+  static async resetPassword(userId: string, newPassword: string): Promise<void> {
     // Validate password strength
     if (!this.validatePasswordStrength(newPassword)) {
       throw new AppError('Password does not meet security requirements', 400, ErrorTypes.VALIDATION_ERROR);
@@ -615,7 +615,7 @@ export class AuthService {
   /**
    * Deactivate user account
    */
-  static async deactivateUser(userId: number): Promise<void> {
+  static async deactivateUser(userId: string): Promise<void> {
     // You can add an isActive field to your User model
     // await prisma.user.update({
     //   where: { id: userId },

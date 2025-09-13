@@ -1,11 +1,11 @@
-import { Role, Sex } from '@prisma/client';
+import { Role, Sex, MedicalLicenseLevel, PhilHealthAccreditation } from '@prisma/client';
 
 // Re-export Prisma types for use in other modules
-export { Role, Sex };
+export { Role, Sex, MedicalLicenseLevel, PhilHealthAccreditation };
 
 // User Types
 export interface IUser {
-  id: number;
+  id: string;
   email: string;
   role: Role;
   createdAt: Date;
@@ -23,8 +23,8 @@ export interface IUserProfile extends IUser {
 
 // Doctor Types
 export interface IDoctorInfo {
-  id: number;
-  userId: number;
+  id: string;
+  userId: string;
   firstName: string;
   middleName: string | null;
   lastName: string;
@@ -36,6 +36,27 @@ export interface IDoctorInfo {
   specialization: string;
   qualifications: string;
   experience: number;
+  // Medical License Information
+  prcId: string | null;
+  ptrId: string | null;
+  medicalLicenseLevel: MedicalLicenseLevel | null;
+  philHealthAccreditation: PhilHealthAccreditation | null;
+  licenseNumber: string | null;
+  licenseExpiry: Date | null;
+  isLicenseActive: boolean;
+  // Additional License Information
+  additionalCertifications: string | null;
+  licenseIssuedBy: string | null;
+  licenseIssuedDate: Date | null;
+  renewalRequired: boolean;
+  // ID Document Uploads (Base64 encoded)
+  prcIdImage: string | null;
+  ptrIdImage: string | null;
+  medicalLicenseImage: string | null;
+  additionalIdImages: string | null;
+  idDocumentsVerified: boolean;
+  idDocumentsVerifiedBy: string | null;
+  idDocumentsVerifiedAt: Date | null;
 }
 
 export interface IDoctorWithUser extends IDoctorInfo {
@@ -45,8 +66,8 @@ export interface IDoctorWithUser extends IDoctorInfo {
 
 // Patient Types
 export interface IPatientInfo {
-  id: number;
-  userId: number;
+  id: string;
+  userId: string;
   fullName: string;
   gender: Sex;
   dateOfBirth: Date;
@@ -68,15 +89,15 @@ export interface IPatientWithUser extends IPatientInfo {
 
 // Doctor Category Types
 export interface IDoctorCategory {
-  id: number;
+  id: string;
   name: string;
   description?: string;
 }
 
 // Emergency Contact Types
 export interface IEmergencyContact {
-  id: number;
-  patientId: number;
+  id: string;
+  patientId: string;
   contactName: string;
   relationship: string;
   contactNumber: string;
@@ -85,8 +106,8 @@ export interface IEmergencyContact {
 
 // Insurance Info Types
 export interface IInsuranceInfo {
-  id: number;
-  patientId: number;
+  id: string;
+  patientId: string;
   providerName: string;
   policyNumber: string;
   insuranceContact: string;
@@ -94,9 +115,9 @@ export interface IInsuranceInfo {
 
 // Consultation Types
 export interface IConsultation {
-  id: number;
-  doctorId: number;
-  patientId: number;
+  id: string;
+  doctorId: string;
+  patientId: string;
   startTime: Date;
   endTime?: Date;
   consultationLink: string;
@@ -110,8 +131,8 @@ export interface IConsultationWithRelations extends IConsultation {
 
 // Health Scan Types
 export interface IHealthScan {
-  id: number;
-  consultationId: number;
+  id: string;
+  consultationId: string;
   bloodPressure?: string;
   heartRate?: number;
   spO2?: number;
@@ -148,8 +169,8 @@ export interface IHealthScan {
 
 // Doctor Schedule Types
 export interface IDoctorSchedule {
-  id: number;
-  doctorId: number;
+  id: string;
+  doctorId: string;
   dayOfWeek: string;
   startTime: Date;
   endTime: Date;
@@ -186,6 +207,23 @@ export interface IRegisterRequest {
   medicalHistory?: string;
   allergies?: string;
   medications?: string;
+  // Medical License Information (for doctor)
+  prcId?: string;
+  ptrId?: string;
+  medicalLicenseLevel?: MedicalLicenseLevel;
+  philHealthAccreditation?: PhilHealthAccreditation;
+  licenseNumber?: string;
+  licenseExpiry?: string;
+  isLicenseActive?: boolean;
+  additionalCertifications?: string;
+  licenseIssuedBy?: string;
+  licenseIssuedDate?: string;
+  renewalRequired?: boolean;
+  // ID Document Uploads (for doctor)
+  prcIdImage?: string;
+  ptrIdImage?: string;
+  medicalLicenseImage?: string;
+  additionalIdImages?: string;
   // Emergency Contact (for patient)
   emergencyContactName?: string;
   emergencyContactRelationship?: string;
@@ -231,11 +269,28 @@ export interface IUpdateProfileRequest {
   medicalHistory?: string;
   allergies?: string;
   medications?: string;
+  // Medical License Information (for doctor)
+  prcId?: string;
+  ptrId?: string;
+  medicalLicenseLevel?: MedicalLicenseLevel;
+  philHealthAccreditation?: PhilHealthAccreditation;
+  licenseNumber?: string;
+  licenseExpiry?: string;
+  isLicenseActive?: boolean;
+  additionalCertifications?: string;
+  licenseIssuedBy?: string;
+  licenseIssuedDate?: string;
+  renewalRequired?: boolean;
+  // ID Document Uploads (for doctor)
+  prcIdImage?: string;
+  ptrIdImage?: string;
+  medicalLicenseImage?: string;
+  additionalIdImages?: string;
 }
 
 // JWT Payload Types
 export interface IJWTPayload {
-  userId: number;
+  userId: string;
   email: string;
   role: Role;
   iat?: number;
@@ -243,7 +298,7 @@ export interface IJWTPayload {
 }
 
 export interface IRefreshTokenPayload {
-  userId: number;
+  userId: string;
   tokenId: string;
   iat?: number;
   exp?: number;
@@ -290,7 +345,7 @@ export interface IUserFilters {
 }
 
 export interface IDoctorFilters {
-  categoryId?: number;
+  categoryId?: string;
   specialization?: string;
   search?: string;
   page?: number;
@@ -305,8 +360,8 @@ export interface IPatientFilters {
 }
 
 export interface IConsultationFilters {
-  doctorId?: number;
-  patientId?: number;
+  doctorId?: string;
+  patientId?: string;
   startDate?: string;
   endDate?: string;
   status?: string;
@@ -327,11 +382,11 @@ export interface IValidationResult {
 
 // Audit Log Types
 export interface IAuditLog {
-  id: number;
-  userId: number;
+  id: string;
+  userId: string;
   action: string;
   resource: string;
-  resourceId?: number;
+  resourceId?: string;
   details?: any;
   ipAddress?: string;
   userAgent?: string;
@@ -339,10 +394,10 @@ export interface IAuditLog {
 }
 
 export interface ICreateAuditLogRequest {
-  userId: number;
+  userId: string;
   action: string;
   resource: string;
-  resourceId?: number;
+  resourceId?: string;
   details?: any;
   ipAddress?: string;
   userAgent?: string;
@@ -394,8 +449,8 @@ export interface IExportRequest {
 
 // Notification Types
 export interface INotification {
-  id: number;
-  userId: number;
+  id: string;
+  userId: string;
   title: string;
   message: string;
   type: 'info' | 'success' | 'warning' | 'error';
@@ -404,7 +459,7 @@ export interface INotification {
 }
 
 export interface ICreateNotificationRequest {
-  userId: number;
+  userId: string;
   title: string;
   message: string;
   type?: 'info' | 'success' | 'warning' | 'error';
@@ -428,7 +483,7 @@ export interface IDashboardStats {
 
 // Health Metrics Types
 export interface IHealthMetrics {
-  userId: number;
+  userId: string;
   date: Date;
   heartRate: number;
   bloodPressure: string;

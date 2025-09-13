@@ -9,16 +9,41 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User model for login (Doctors, Patients, Admins)
-model User {
-  id        Int      @id @default(autoincrement()) // Primary key, auto-incremented ID
-  email     String   @unique // Unique email for login authentication
-  password  String // Hashed password for secure login
-  role      Role // Role to distinguish between doctor, patient, and admin
-  createdAt DateTime @default(now()) // Timestamp when user is created
-  updatedAt DateTime @updatedAt // Timestamp when user data is updated
+// Organization model for healthcare organizations
+model Organization {
+  id          String   @id @default(uuid()) // Primary key, UUID
+  name        String   @unique // Organization name
+  description String?  // Organization description
+  address     String?  // Organization address
+  phone       String?  // Organization phone number
+  email       String?  // Organization email
+  website     String?  // Organization website
+  isActive    Boolean  @default(true) // Whether the organization is active
+  createdAt   DateTime @default(now()) // Timestamp when organization is created
+  updatedAt   DateTime @updatedAt // Timestamp when organization data is updated
 
   // Relationships
+  users       User[]   // Users belonging to this organization
+}
+
+// User model for login (Doctors, Patients, Admins, Super Admins)
+model User {
+  id             String   @id @default(uuid()) // Primary key, UUID
+  email          String   @unique // Unique email for login authentication
+  password       String // Hashed password for secure login
+  role           Role // Role to distinguish between doctor, patient, admin, and super admin
+  organizationId String?  // Foreign key to Organization (nullable for super admins and patients)
+  createdAt      DateTime @default(now()) // Timestamp when user is created
+  updatedAt      DateTime @updatedAt // Timestamp when user data is updated
+  
+  // Profile Picture
+  profilePicture String? // Base64 encoded profile picture
+  profilePictureVerified Boolean @default(false) // Whether profile picture has been verified
+  profilePictureVerifiedBy String? // User ID who verified the profile picture
+  profilePictureVerifiedAt DateTime? // When the profile picture was verified
+
+  // Relationships
+  organization           Organization? @relation(fields: [organizationId], references: [id]) // Organization the user belongs to
   consultationsAsDoctor  Consultation[]   @relation("DoctorConsultations") // Consultations where the user is the doctor
   consultationsAsPatient Consultation[]   @relation("PatientConsultations") // Consultations where the user is the patient
   doctorInfo             DoctorInfo? // Additional information for doctors (only exists if the user is a doctor)
@@ -56,6 +81,9 @@ model User {
   prescriptionsAsPatient Prescription[] @relation("PatientPrescriptions") // Prescriptions for this patient
   diagnosesAsDoctor      Diagnosis[] @relation("DoctorDiagnoses") // Diagnoses made by this doctor
   diagnosesAsPatient      Diagnosis[] @relation("PatientDiagnoses") // Diagnoses for this patient
+  
+  @@index([profilePictureVerified])
+  @@index([profilePictureVerifiedBy])
 }
 
 // Enum for different user roles
@@ -63,11 +91,12 @@ enum Role {
   DOCTOR
   PATIENT
   ADMIN
+  SUPER_ADMIN
 }
 
 // Doctor Category model to categorize doctors by specialization (e.g., Cardiologist, Dermatologist)
 model DoctorCategory {
-  id          Int     @id @default(autoincrement()) // Primary key, auto-incremented ID
+  id          String  @id @default(uuid()) // Primary key, UUID
   name        String  @unique // Category name (e.g., Cardiologist, Dermatologist)
   description String? // A short description of the category (optional)
   doctors     User[]  @relation("DoctorCategories") // List of doctors that belong to this category
@@ -75,8 +104,8 @@ model DoctorCategory {
 
 // Doctor Information model for additional details about the doctor
 model DoctorInfo {
-  id             Int      @id @default(autoincrement()) // Primary key, auto-incremented ID
-  userId         Int      @unique // Make userId unique for one-to-one relationship
+  id             String   @id @default(uuid()) // Primary key, UUID
+  userId         String   @unique // Make userId unique for one-to-one relationship
   firstName      String // Doctor's first name
   middleName     String? // Doctor's middle name (optional)
   lastName       String // Doctor's last name
@@ -86,10 +115,43 @@ model DoctorInfo {
   address        String // Doctor's address
   bio            String // Brief biography of the doctor
   specialization String // Specialization or field of medicine the doctor practices
-  qualifications String // Doctor’s qualifications (e.g., MBBS, MD)
+  qualifications String // Doctor's qualifications (e.g., MBBS, MD)
   experience     Int // Number of years of experience in the medical field
+  
+  // Medical License Information
+  prcId          String? // PRC (Professional Regulation Commission) ID number
+  ptrId          String? // PTR (Professional Tax Receipt) ID number
+  medicalLicenseLevel MedicalLicenseLevel? // Medical license level (S1, S2, S3)
+  philHealthAccreditation PhilHealthAccreditation? // PhilHealth accreditation status
+  licenseNumber  String? // Medical license number
+  licenseExpiry  DateTime? // Medical license expiry date
+  isLicenseActive Boolean @default(true) // Whether the medical license is currently active
+  
+  // Additional License Information
+  additionalCertifications String? // Additional medical certifications (JSON string for flexibility)
+  licenseIssuedBy String? // Authority that issued the license (e.g., "PRC", "Medical Board")
+  licenseIssuedDate DateTime? // When the license was issued
+  renewalRequired Boolean @default(true) // Whether the license requires periodic renewal
+  
+  // ID Document Uploads (Base64 encoded)
+  prcIdImage     String? // Base64 encoded PRC ID image
+  ptrIdImage     String? // Base64 encoded PTR ID image
+  medicalLicenseImage String? // Base64 encoded medical license image
+  additionalIdImages String? // JSON string containing additional ID images (base64 encoded)
+  idDocumentsVerified Boolean @default(false) // Whether ID documents have been verified
+  idDocumentsVerifiedBy String? // User ID who verified the documents
+  idDocumentsVerifiedAt DateTime? // When the documents were verified
 
   user User @relation(fields: [userId], references: [id]) // Relationship to User (Doctor)
+  
+  @@index([prcId])
+  @@index([ptrId])
+  @@index([medicalLicenseLevel])
+  @@index([philHealthAccreditation])
+  @@index([isLicenseActive])
+  @@index([licenseExpiry])
+  @@index([idDocumentsVerified])
+  @@index([idDocumentsVerifiedBy])
 }
 
 // Enum for sex
@@ -99,10 +161,27 @@ enum Sex {
   OTHER
 }
 
+// Medical License Level enum for Philippine medical practice levels
+enum MedicalLicenseLevel {
+  S1 // General Practitioner Accreditation - for general practitioners and primary care doctors
+  S2 // Specialist Accreditation - for doctors with specialized training in specific medical fields
+  S3 // Subspecialist Accreditation - for subspecialists with advanced training in specific areas
+}
+
+// PhilHealth Accreditation Status enum
+enum PhilHealthAccreditation {
+  ACCREDITED     // Fully accredited with PhilHealth
+  PENDING        // Accreditation application pending
+  SUSPENDED      // Accreditation temporarily suspended
+  EXPIRED        // Accreditation has expired
+  NOT_ACCREDITED // Not accredited with PhilHealth
+  UNDER_REVIEW   // Accreditation under review
+}
+
 // Doctor Schedule model to manage doctor availability (e.g., availability on specific days and times)
 model DoctorSchedule {
-  id        Int      @id @default(autoincrement()) // Primary key, auto-incremented ID
-  doctorId  Int // Reference to Doctor (User)
+  id        String   @id @default(uuid()) // Primary key, UUID
+  doctorId  String // Reference to Doctor (User)
   dayOfWeek String // Day of the week the doctor is available (e.g., Monday, Tuesday)
   startTime DateTime // Start time of doctor's availability on this day
   endTime   DateTime // End time of doctor's availability on this day
@@ -115,9 +194,9 @@ model DoctorSchedule {
 
 // Consultation model that stores consultation details between a doctor and a patient
 model Consultation {
-  id               Int       @id @default(autoincrement()) // Primary key, auto-incremented ID
-  doctorId         Int // Foreign key to User (Doctor)
-  patientId        Int // Foreign key to User (Patient)
+  id               String    @id @default(uuid()) // Primary key, UUID
+  doctorId         String // Foreign key to User (Doctor)
+  patientId        String // Foreign key to User (Patient)
   startTime        DateTime // The start time of the consultation
   endTime          DateTime? // The end time of the consultation (optional)
   consultationCode String   @unique // Unique consultation code for tracking and identification (9 characters)
@@ -142,8 +221,8 @@ model Consultation {
 
 // HealthScan model that stores health scan data (e.g., heart rate, stress level, etc.)
 model HealthScan {
-  id              Int     @id @default(autoincrement()) // Primary key
-  consultationId  Int     @unique // Foreign key to Consultation - make unique for one-to-one relation
+  id              String  @id @default(uuid()) // Primary key, UUID
+  consultationId  String  @unique // Foreign key to Consultation - make unique for one-to-one relation
   bloodPressure   String? // Blood pressure (e.g., 130/80)
   heartRate       Float? // Heart rate in bpm (e.g., 84 bpm)
   spO2            Float? // Oxygen saturation level (e.g., 98%)
@@ -190,8 +269,8 @@ model HealthScan {
 
 // Patient Information model to store additional details about the patient
 model PatientInfo {
-  id               Int               @id @default(autoincrement()) // Primary key
-  userId           Int               @unique // Make userId unique for one-to-one relationship
+  id               String            @id @default(uuid()) // Primary key, UUID
+  userId           String            @unique // Make userId unique for one-to-one relationship
   fullName         String // Full name of the patient
   gender           Sex // Patient's gender (Male/Female/Other)
   dateOfBirth      DateTime // Patient's date of birth
@@ -205,14 +284,32 @@ model PatientInfo {
   allergies        String? // Patient's allergies (optional)
   medications      String? // Current medications (optional)
   insuranceInfo    InsuranceInfo? // Patient's insurance information
+  
+  // PhilHealth Information
+  philHealthId     String? // PhilHealth ID number (e.g., 12-345678901-2)
+  philHealthStatus String? // PhilHealth membership status (e.g., ACTIVE, INACTIVE, PENDING)
+  philHealthCategory String? // PhilHealth category (e.g., INDIVIDUAL, FAMILY, SPONSORED)
+  philHealthExpiry DateTime? // PhilHealth membership expiry date
+  philHealthMemberSince DateTime? // When the patient became a PhilHealth member
+  
+  // PhilHealth ID Document Upload (Base64 encoded)
+  philHealthIdImage String? // Base64 encoded PhilHealth ID image
+  philHealthIdVerified Boolean @default(false) // Whether PhilHealth ID has been verified
+  philHealthIdVerifiedBy String? // User ID who verified the PhilHealth ID
+  philHealthIdVerifiedAt DateTime? // When the PhilHealth ID was verified
 
   user User @relation(fields: [userId], references: [id]) // Relation to Patient User
+  
+  @@index([philHealthId])
+  @@index([philHealthStatus])
+  @@index([philHealthIdVerified])
+  @@index([philHealthIdVerifiedBy])
 }
 
 // Emergency Contact model
 model EmergencyContact {
-  id             Int     @id @default(autoincrement()) // Primary key
-  patientId      Int     @unique // Foreign key to Patient (User) - unique for one-to-one relation
+  id             String  @id @default(uuid()) // Primary key, UUID
+  patientId      String  @unique // Foreign key to Patient (User) - unique for one-to-one relation
   contactName    String // Emergency contact name
   relationship   String // Relationship to patient (e.g., Mother, Father, Spouse)
   contactNumber  String // Emergency contact number
@@ -224,8 +321,8 @@ model EmergencyContact {
 
 // Insurance Info model
 model InsuranceInfo {
-  id               Int    @id @default(autoincrement()) // Primary key
-  patientId        Int    @unique // Foreign key to Patient (User) - unique for one-to-one relation
+  id               String @id @default(uuid()) // Primary key, UUID
+  patientId        String @unique // Foreign key to Patient (User) - unique for one-to-one relation
   providerName     String // Insurance provider name
   policyNumber     String // Insurance policy number
   insuranceContact String // Insurance contact information (e.g., phone number or email)
@@ -237,7 +334,7 @@ model InsuranceInfo {
 // Refresh Token model for JWT refresh tokens
 model RefreshToken {
   id        String   @id @default(uuid())
-  userId    Int      // Foreign key to User
+  userId    String   // Foreign key to User
   token     String   @unique // The actual refresh token string
   expiresAt DateTime // When the token expires
   createdAt DateTime @default(now()) // When the token was created
@@ -250,7 +347,7 @@ model RefreshToken {
 // Audit Log model for comprehensive activity tracking
 model AuditLog {
   id           String         @id @default(uuid())
-  userId       Int? // Foreign key to User (nullable for system events)
+  userId       String? // Foreign key to User (nullable for system events)
   action       String // Action performed (e.g., LOGIN, CREATE, UPDATE, DELETE)
   category     AuditCategory // Category of the audit log
   level        AuditLevel // Severity level of the audit log
@@ -280,12 +377,12 @@ model SecurityEvent {
   description String // Description of the security event
   ipAddress   String // IP address associated with the event
   userAgent   String // User agent string
-  userId      Int? // Foreign key to User (nullable for anonymous events)
+  userId      String? // Foreign key to User (nullable for anonymous events)
   details     Json? // Additional details in JSON format
   timestamp   DateTime @default(now()) // When the event occurred
   resolved    Boolean @default(false) // Whether the security event has been resolved
   resolvedAt  DateTime? // When the event was resolved
-  resolvedBy  Int? // User who resolved the event
+  resolvedBy  String? // User who resolved the event
   
   user       User? @relation(fields: [userId], references: [id], onDelete: SetNull)
   resolvedByUser User? @relation("ResolvedSecurityEvents", fields: [resolvedBy], references: [id], onDelete: SetNull)
@@ -318,9 +415,9 @@ enum AuditLevel {
 
 // Appointment Request model for patient-initiated consultation requests
 model AppointmentRequest {
-  id          Int                @id @default(autoincrement())
-  patientId   Int                // Patient requesting the appointment
-  doctorId    Int                // Doctor being requested
+  id          String             @id @default(uuid())
+  patientId   String             // Patient requesting the appointment
+  doctorId    String             // Doctor being requested
   requestedDate DateTime         // Preferred date for consultation
   requestedTime String           // Preferred time slot
   reason      String             // Reason for consultation
@@ -333,7 +430,7 @@ model AppointmentRequest {
   patient    User                @relation("PatientAppointments", fields: [patientId], references: [id])
   doctor     User                @relation("DoctorAppointments", fields: [doctorId], references: [id])
   consultation Consultation?      @relation(fields: [consultationId], references: [id]) // Links to actual consultation when confirmed
-  consultationId Int?             @unique // Foreign key to Consultation (unique for one-to-one relation)
+  consultationId String?          @unique // Foreign key to Consultation (unique for one-to-one relation)
   rescheduleRequests RescheduleRequest[] // Track reschedule requests
   
   @@index([patientId])
@@ -344,9 +441,9 @@ model AppointmentRequest {
 
 // Reschedule Request model for handling appointment rescheduling
 model RescheduleRequest {
-  id                Int                    @id @default(autoincrement())
-  appointmentId     Int                    // Reference to the appointment being rescheduled
-  requestedBy       Int                    // User ID who requested the reschedule (patient or doctor)
+  id                String                 @id @default(uuid())
+  appointmentId     String                 // Reference to the appointment being rescheduled
+  requestedBy       String                 // User ID who requested the reschedule (patient or doctor)
   requestedByRole   Role                   // Role of the person requesting reschedule
   currentDate       DateTime               // Current scheduled date
   currentTime       String                 // Current scheduled time
@@ -404,8 +501,8 @@ enum Priority {
 
 // Consultation Privacy model to manage privacy settings
 model ConsultationPrivacy {
-  id             Int      @id @default(autoincrement())
-  consultationId Int      // Reference to the consultation
+  id             String   @id @default(uuid())
+  consultationId String   // Reference to the consultation
   settingType    PrivacySettingType // Type of privacy setting
   isEnabled      Boolean  @default(true) // Whether this privacy setting is enabled
   createdAt      DateTime @default(now())
@@ -419,11 +516,11 @@ model ConsultationPrivacy {
 
 // Consultation Sharing model to control which doctors can access consultations
 model ConsultationSharing {
-  id             Int      @id @default(autoincrement())
-  consultationId Int      // Reference to the consultation being shared
-  sharedWithDoctorId Int  // Doctor who can access this consultation
+  id             String   @id @default(uuid())
+  consultationId String   // Reference to the consultation being shared
+  sharedWithDoctorId String // Doctor who can access this consultation
   accessLevel    AccessLevel @default(READ_ONLY) // Level of access granted
-  sharedBy       Int      // User who shared the consultation (patient or original doctor)
+  sharedBy       String   // User who shared the consultation (patient or original doctor)
   sharedAt       DateTime @default(now())
   expiresAt      DateTime? // When access expires (optional)
   isActive       Boolean  @default(true) // Whether the sharing is still active
@@ -440,15 +537,15 @@ model ConsultationSharing {
 
 // Patient Medical History model for comprehensive health records
 model PatientMedicalHistory {
-  id              Int      @id @default(autoincrement())
-  patientId       Int      // Reference to the patient
-  consultationId  Int?     // Optional reference to specific consultation
+  id              String   @id @default(uuid())
+  patientId       String   // Reference to the patient
+  consultationId  String?  // Optional reference to specific consultation
   recordType      MedicalRecordType // Type of medical record
   title           String   // Title/description of the record
   content         String   // Content of the medical record
   isPublic        Boolean  @default(false) // Whether this record is public
   isSensitive     Boolean  @default(false) // Whether this is sensitive information
-  createdBy       Int      // User who created this record
+  createdBy       String   // User who created this record
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   
@@ -465,8 +562,8 @@ model PatientMedicalHistory {
 
 // Medical Record Privacy model
 model MedicalRecordPrivacy {
-  id                   Int      @id @default(autoincrement())
-  medicalRecordId      Int      // Reference to the medical record
+  id                   String   @id @default(uuid())
+  medicalRecordId      String   // Reference to the medical record
   settingType          PrivacySettingType // Type of privacy setting
   isEnabled            Boolean  @default(true) // Whether this privacy setting is enabled
   createdAt            DateTime @default(now())
@@ -480,8 +577,8 @@ model MedicalRecordPrivacy {
 
 // HealthScan Privacy model to manage privacy settings for health scan data
 model HealthScanPrivacy {
-  id             Int      @id @default(autoincrement())
-  healthScanId   Int      // Reference to the health scan
+  id             String   @id @default(uuid())
+  healthScanId   String   // Reference to the health scan
   settingType    PrivacySettingType // Type of privacy setting
   isEnabled      Boolean  @default(true) // Whether this privacy setting is enabled
   createdAt      DateTime @default(now())
@@ -495,11 +592,11 @@ model HealthScanPrivacy {
 
 // HealthScan Sharing model to control which doctors can access health scan data
 model HealthScanSharing {
-  id                   Int      @id @default(autoincrement())
-  healthScanId         Int      // Reference to the health scan being shared
-  sharedWithDoctorId   Int      // Doctor who can access this health scan
+  id                   String   @id @default(uuid())
+  healthScanId         String   // Reference to the health scan being shared
+  sharedWithDoctorId   String   // Doctor who can access this health scan
   accessLevel          AccessLevel @default(READ_ONLY) // Level of access granted
-  sharedBy             Int      // User who shared the health scan (patient or original doctor)
+  sharedBy             String   // User who shared the health scan (patient or original doctor)
   sharedAt             DateTime @default(now())
   expiresAt            DateTime? // When access expires (optional)
   isActive             Boolean  @default(true) // Whether the sharing is still active
@@ -550,10 +647,10 @@ enum MedicalRecordType {
 
 // Prescription model for managing medication prescriptions
 model Prescription {
-  id              Int      @id @default(autoincrement()) // Primary key
-  patientId       Int      // Reference to the patient
-  doctorId        Int      // Reference to the doctor who prescribed
-  consultationId  Int?     // Optional reference to the consultation
+  id              String   @id @default(uuid()) // Primary key, UUID
+  patientId       String   // Reference to the patient
+  doctorId        String   // Reference to the doctor who prescribed
+  consultationId  String?  // Optional reference to the consultation
   medicationName  String   // Name of the medication
   dosage          String   // Dosage instructions (e.g., "500mg twice daily")
   frequency       String   // How often to take (e.g., "twice daily", "as needed")
@@ -581,10 +678,10 @@ model Prescription {
 
 // Diagnosis model for managing medical diagnoses
 model Diagnosis {
-  id              Int      @id @default(autoincrement()) // Primary key
-  patientId       Int      // Reference to the patient
-  doctorId        Int      // Reference to the doctor who made the diagnosis
-  consultationId  Int?     // Optional reference to the consultation
+  id              String   @id @default(uuid()) // Primary key, UUID
+  patientId       String   // Reference to the patient
+  doctorId        String   // Reference to the doctor who made the diagnosis
+  consultationId  String?  // Optional reference to the consultation
   diagnosisCode   String?  // ICD-10 or other medical coding system code
   diagnosisName   String   // Name of the diagnosis/condition
   description     String?  // Detailed description of the diagnosis

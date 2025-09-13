@@ -103,7 +103,7 @@ export class MedicalRecordsController {
       const { recordType, isPublic, page = 1, limit = 10 } = req.query;
 
       // Verify permissions
-      if (userRole === Role.PATIENT && userId !== Number(patientId)) {
+      if (userRole === Role.PATIENT && userId !== patientId) {
         return res.status(403).json({
           success: false,
           message: 'You can only view your own medical records'
@@ -112,7 +112,7 @@ export class MedicalRecordsController {
 
       if (userRole === Role.DOCTOR) {
         // Check if doctor has access to this patient
-        const hasAccess = await this.checkDoctorAccess(userId, Number(patientId));
+        const hasAccess = await this.checkDoctorAccess(userId, patientId);
         if (!hasAccess) {
           return res.status(403).json({
             success: false,
@@ -121,7 +121,7 @@ export class MedicalRecordsController {
         }
       }
 
-      let whereClause: any = { patientId: Number(patientId) };
+      let whereClause: any = { patientId: patientId };
 
       if (recordType) {
         whereClause.recordType = recordType;
@@ -198,7 +198,7 @@ export class MedicalRecordsController {
       const userRole = (req as any).user.role;
 
       // Verify permissions
-      if (userRole === Role.PATIENT && userId !== Number(patientId)) {
+      if (userRole === Role.PATIENT && userId !== patientId) {
         return res.status(403).json({
           success: false,
           message: 'You can only view your own medical records'
@@ -207,7 +207,7 @@ export class MedicalRecordsController {
 
       if (userRole === Role.DOCTOR) {
         // Check if doctor has access to this patient
-        const hasAccess = await this.checkDoctorAccess(userId, Number(patientId));
+        const hasAccess = await this.checkDoctorAccess(userId, patientId);
         if (!hasAccess) {
           return res.status(403).json({
             success: false,
@@ -218,7 +218,7 @@ export class MedicalRecordsController {
 
       // Get patient info
       const patientInfo = await prisma.patientInfo.findFirst({
-        where: { userId: Number(patientId) }
+        where: { userId: patientId }
       });
 
       if (!patientInfo) {
@@ -230,7 +230,7 @@ export class MedicalRecordsController {
 
       // Get consultations with health scans
       const consultations = await prisma.consultation.findMany({
-        where: { patientId: Number(patientId) },
+        where: { patientId: patientId },
         include: {
           doctor: {
             select: {
@@ -259,7 +259,7 @@ export class MedicalRecordsController {
 
       // Get medical history records
       const medicalHistory = await prisma.patientMedicalHistory.findMany({
-        where: { patientId: Number(patientId) },
+        where: { patientId: patientId },
         include: {
           creator: {
             select: {
@@ -289,11 +289,11 @@ export class MedicalRecordsController {
 
       // Get emergency contact and insurance info
       const emergencyContact = await prisma.emergencyContact.findFirst({
-        where: { patientId: Number(patientId) }
+        where: { patientId: patientId }
       });
 
       const insuranceInfo = await prisma.insuranceInfo.findFirst({
-        where: { patientId: Number(patientId) }
+        where: { patientId: patientId }
       });
 
       // Build complete patient info
@@ -346,7 +346,7 @@ export class MedicalRecordsController {
 
       // Get medical record
       const medicalRecord = await prisma.patientMedicalHistory.findFirst({
-        where: { id: Number(recordId) },
+        where: { id: recordId },
         include: { creator: true }
       });
 
@@ -367,7 +367,7 @@ export class MedicalRecordsController {
 
       // Update medical record
       const updatedRecord = await prisma.patientMedicalHistory.update({
-        where: { id: Number(recordId) },
+        where: { id: recordId },
         data: {
           title,
           content,
@@ -414,7 +414,7 @@ export class MedicalRecordsController {
 
       // Get medical record
       const medicalRecord = await prisma.patientMedicalHistory.findFirst({
-        where: { id: Number(recordId) },
+        where: { id: recordId },
         include: { patient: true }
       });
 
@@ -438,7 +438,7 @@ export class MedicalRecordsController {
         await prisma.medicalRecordPrivacy.upsert({
           where: {
             medicalRecordId_settingType: {
-              medicalRecordId: Number(recordId),
+              medicalRecordId: recordId,
               settingType: setting.settingType
             }
           },
@@ -446,7 +446,7 @@ export class MedicalRecordsController {
             isEnabled: setting.isEnabled
           },
           create: {
-            medicalRecordId: Number(recordId),
+            medicalRecordId: recordId,
             settingType: setting.settingType,
             isEnabled: setting.isEnabled
           }
@@ -489,7 +489,7 @@ export class MedicalRecordsController {
 
       // Get medical record
       const medicalRecord = await prisma.patientMedicalHistory.findFirst({
-        where: { id: Number(recordId) },
+        where: { id: recordId },
         include: { patient: true }
       });
 
@@ -523,7 +523,7 @@ export class MedicalRecordsController {
       // Create sharing record
       const sharing = await prisma.consultationSharing.create({
         data: {
-          consultationId: medicalRecord.consultationId || 0,
+          consultationId: medicalRecord.consultationId || '',
           sharedWithDoctorId: doctorId,
           accessLevel: accessLevel || AccessLevel.READ_ONLY,
           sharedBy: userId,
@@ -567,7 +567,7 @@ export class MedicalRecordsController {
 
       // Get medical record
       const medicalRecord = await prisma.patientMedicalHistory.findFirst({
-        where: { id: Number(recordId) }
+        where: { id: recordId }
       });
 
       if (!medicalRecord) {
@@ -587,7 +587,7 @@ export class MedicalRecordsController {
 
       // Delete medical record (cascade will handle related records)
       await prisma.patientMedicalHistory.delete({
-        where: { id: Number(recordId) }
+        where: { id: recordId }
       });
 
       // Audit log
@@ -618,7 +618,7 @@ export class MedicalRecordsController {
   }
 
   // Private method to check doctor access
-  private async checkDoctorAccess(doctorId: number, patientId: number): Promise<boolean> {
+  private async checkDoctorAccess(doctorId: string, patientId: string): Promise<boolean> {
     // Check if doctor has any consultation with this patient
     const consultation = await prisma.consultation.findFirst({
       where: {
@@ -643,7 +643,7 @@ export class MedicalRecordsController {
   }
 
   // Private method to create default privacy settings
-  private async createDefaultPrivacySettings(recordId: number) {
+  private async createDefaultPrivacySettings(recordId: string) {
     const defaultSettings = [
       { settingType: PrivacySettingType.PUBLIC_READ, isEnabled: false },
       { settingType: PrivacySettingType.SHARED_SPECIFIC, isEnabled: true },

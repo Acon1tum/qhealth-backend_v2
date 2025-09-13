@@ -22,15 +22,14 @@ export class AppointmentsController {
         });
       }
 
-      // Coerce IDs to numbers and validate
-      const patientIdNum = Number(patientId);
-      const doctorIdNum = Number(doctorId);
-      if (!Number.isInteger(patientIdNum) || !Number.isInteger(doctorIdNum)) {
-        return res.status(400).json({ success: false, message: 'Invalid patientId or doctorId' });
+      // Validate UUID format for IDs
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(patientId) || !uuidRegex.test(doctorId)) {
+        return res.status(400).json({ success: false, message: 'Invalid patientId or doctorId format' });
       }
 
       // Verify patient is creating their own appointment
-      if (userId !== patientIdNum) {
+      if (userId !== patientId) {
         return res.status(403).json({
           success: false,
           message: 'You can only create appointments for yourself'
@@ -39,7 +38,7 @@ export class AppointmentsController {
 
       // Check if doctor exists and is a doctor
       const doctor = await prisma.user.findFirst({
-        where: { id: doctorIdNum, role: Role.DOCTOR }
+        where: { id: doctorId, role: Role.DOCTOR }
       });
 
       if (!doctor) {
@@ -67,7 +66,7 @@ export class AppointmentsController {
       }
 
       // Check doctor availability
-      const isAvailable = await this.checkDoctorAvailability(doctorIdNum, requestedDate, requestedTime);
+      const isAvailable = await this.checkDoctorAvailability(doctorId, requestedDate, requestedTime);
       if (!isAvailable) {
         return res.status(400).json({
           success: false,
@@ -76,7 +75,7 @@ export class AppointmentsController {
       }
 
       // Check for existing appointment conflicts
-      const hasConflict = await this.checkAppointmentConflict(doctorIdNum, parsedDate, requestedTime);
+      const hasConflict = await this.checkAppointmentConflict(doctorId, parsedDate, requestedTime);
       if (hasConflict) {
         return res.status(400).json({
           success: false,
@@ -87,8 +86,8 @@ export class AppointmentsController {
       // Create appointment request
       const appointment = await prisma.appointmentRequest.create({
         data: {
-          patientId: patientIdNum,
-          doctorId: doctorIdNum,
+          patientId: patientId,
+          doctorId: doctorId,
           requestedDate: parsedDate, // Use the already validated parsed date
           requestedTime,
           reason,
@@ -245,7 +244,7 @@ export class AppointmentsController {
 
       // Get appointment and verify doctor owns it
       const appointment = await prisma.appointmentRequest.findFirst({
-        where: { id: Number(appointmentId), doctorId: userId }
+        where: { id: appointmentId, doctorId: userId }
       });
 
       if (!appointment) {
@@ -257,7 +256,7 @@ export class AppointmentsController {
 
       // Update appointment status
       const updatedAppointment = await prisma.appointmentRequest.update({
-        where: { id: Number(appointmentId) },
+        where: { id: appointmentId },
         data: {
           status,
           updatedAt: new Date()
@@ -324,7 +323,7 @@ export class AppointmentsController {
       // Get appointment
       const appointment = await prisma.appointmentRequest.findFirst({
         where: { 
-          id: Number(appointmentId),
+          id: appointmentId,
           OR: [
             { patientId: userId },
             { doctorId: userId }
@@ -350,7 +349,7 @@ export class AppointmentsController {
       // Create reschedule request
       const rescheduleRequest = await prisma.rescheduleRequest.create({
         data: {
-          appointmentId: Number(appointmentId),
+          appointmentId: appointmentId,
           requestedBy: userId,
           requestedByRole: userRole,
           currentDate: appointment.requestedDate,
@@ -400,7 +399,7 @@ export class AppointmentsController {
 
       // Get reschedule request
       const rescheduleRequest = await prisma.rescheduleRequest.findFirst({
-        where: { id: Number(rescheduleId) },
+        where: { id: rescheduleId },
         include: { appointment: true }
       });
 
@@ -422,7 +421,7 @@ export class AppointmentsController {
 
       // Update reschedule status
       const updatedReschedule = await prisma.rescheduleRequest.update({
-        where: { id: Number(rescheduleId) },
+        where: { id: rescheduleId },
         data: {
           status,
           notes,
@@ -481,7 +480,7 @@ export class AppointmentsController {
       // Get appointment
       const appointment = await prisma.appointmentRequest.findFirst({
         where: { 
-          id: Number(appointmentId),
+          id: appointmentId,
           OR: [
             { patientId: userId },
             { doctorId: userId }
@@ -498,7 +497,7 @@ export class AppointmentsController {
 
       // Update appointment status
       const updatedAppointment = await prisma.appointmentRequest.update({
-        where: { id: Number(appointmentId) },
+        where: { id: appointmentId },
         data: {
           status: AppointmentStatus.CANCELLED,
           notes: reason,
@@ -535,7 +534,7 @@ export class AppointmentsController {
   }
 
   // Private method to check doctor availability
-  private async checkDoctorAvailability(doctorId: number, date: string, time: string): Promise<boolean> {
+  private async checkDoctorAvailability(doctorId: string, date: string, time: string): Promise<boolean> {
     // console.log('Checking doctor availability:', { doctorId, date, time });
     const requestedDate = new Date(date);
     const dayOfWeek = requestedDate.toLocaleDateString('en-US', { weekday: 'long' });
@@ -586,7 +585,7 @@ export class AppointmentsController {
   }
 
   // Check for appointment conflicts
-  private async checkAppointmentConflict(doctorId: number, requestedDate: Date, requestedTime: string): Promise<boolean> {
+  private async checkAppointmentConflict(doctorId: string, requestedDate: Date, requestedTime: string): Promise<boolean> {
     // console.log('Checking appointment conflict:', { doctorId, requestedDate, requestedTime });
     
     // Parse the requested time
@@ -952,15 +951,16 @@ export class AppointmentsController {
   async getDoctorAvailability(req: Request, res: Response) {
     try {
       const { doctorId } = req.params;
-      const doctorIdNum = Number(doctorId);
-
-      if (!Number.isInteger(doctorIdNum)) {
-        return res.status(400).json({ success: false, message: 'Invalid doctor ID' });
+      
+      // Validate UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(doctorId)) {
+        return res.status(400).json({ success: false, message: 'Invalid doctor ID format' });
       }
 
       // Get doctor's weekly schedule
       const schedules = await prisma.doctorSchedule.findMany({
-        where: { doctorId: doctorIdNum },
+        where: { doctorId },
         orderBy: { dayOfWeek: 'asc' }
       });
 

@@ -207,7 +207,7 @@ const requireOwnershipOrAdmin = (resourceUserIdField = 'userId') => {
             res.status(400).json(response);
             return;
         }
-        if (parseInt(resourceUserId) !== req.user.id) {
+        if (resourceUserId !== req.user.id) {
             const response = {
                 success: false,
                 message: 'Access denied to this resource',
@@ -254,7 +254,7 @@ const requirePatientAccess = (req, res, next) => {
         return;
     }
     // Patient can only access their own data
-    if (req.user.role === types_1.Role.PATIENT && parseInt(patientId) === req.user.id) {
+    if (req.user.role === types_1.Role.PATIENT && patientId === req.user.id) {
         next();
         return;
     }

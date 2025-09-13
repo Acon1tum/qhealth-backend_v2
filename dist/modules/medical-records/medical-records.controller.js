@@ -99,7 +99,7 @@ class MedicalRecordsController {
                 const userRole = req.user.role;
                 const { recordType, isPublic, page = 1, limit = 10 } = req.query;
                 // Verify permissions
-                if (userRole === client_2.Role.PATIENT && userId !== Number(patientId)) {
+                if (userRole === client_2.Role.PATIENT && userId !== patientId) {
                     return res.status(403).json({
                         success: false,
                         message: 'You can only view your own medical records'
@@ -107,7 +107,7 @@ class MedicalRecordsController {
                 }
                 if (userRole === client_2.Role.DOCTOR) {
                     // Check if doctor has access to this patient
-                    const hasAccess = yield this.checkDoctorAccess(userId, Number(patientId));
+                    const hasAccess = yield this.checkDoctorAccess(userId, patientId);
                     if (!hasAccess) {
                         return res.status(403).json({
                             success: false,
@@ -115,7 +115,7 @@ class MedicalRecordsController {
                         });
                     }
                 }
-                let whereClause = { patientId: Number(patientId) };
+                let whereClause = { patientId: patientId };
                 if (recordType) {
                     whereClause.recordType = recordType;
                 }
@@ -187,7 +187,7 @@ class MedicalRecordsController {
                 const userId = req.user.id;
                 const userRole = req.user.role;
                 // Verify permissions
-                if (userRole === client_2.Role.PATIENT && userId !== Number(patientId)) {
+                if (userRole === client_2.Role.PATIENT && userId !== patientId) {
                     return res.status(403).json({
                         success: false,
                         message: 'You can only view your own medical records'
@@ -195,7 +195,7 @@ class MedicalRecordsController {
                 }
                 if (userRole === client_2.Role.DOCTOR) {
                     // Check if doctor has access to this patient
-                    const hasAccess = yield this.checkDoctorAccess(userId, Number(patientId));
+                    const hasAccess = yield this.checkDoctorAccess(userId, patientId);
                     if (!hasAccess) {
                         return res.status(403).json({
                             success: false,
@@ -205,7 +205,7 @@ class MedicalRecordsController {
                 }
                 // Get patient info
                 const patientInfo = yield prisma.patientInfo.findFirst({
-                    where: { userId: Number(patientId) }
+                    where: { userId: patientId }
                 });
                 if (!patientInfo) {
                     return res.status(404).json({
@@ -215,7 +215,7 @@ class MedicalRecordsController {
                 }
                 // Get consultations with health scans
                 const consultations = yield prisma.consultation.findMany({
-                    where: { patientId: Number(patientId) },
+                    where: { patientId: patientId },
                     include: {
                         doctor: {
                             select: {
@@ -239,7 +239,7 @@ class MedicalRecordsController {
                     .filter(Boolean);
                 // Get medical history records
                 const medicalHistory = yield prisma.patientMedicalHistory.findMany({
-                    where: { patientId: Number(patientId) },
+                    where: { patientId: patientId },
                     include: {
                         creator: {
                             select: {
@@ -266,10 +266,10 @@ class MedicalRecordsController {
                 };
                 // Get emergency contact and insurance info
                 const emergencyContact = yield prisma.emergencyContact.findFirst({
-                    where: { patientId: Number(patientId) }
+                    where: { patientId: patientId }
                 });
                 const insuranceInfo = yield prisma.insuranceInfo.findFirst({
-                    where: { patientId: Number(patientId) }
+                    where: { patientId: patientId }
                 });
                 // Build complete patient info
                 const completePatientInfo = Object.assign(Object.assign({}, patientInfo), { emergencyContact,
@@ -317,7 +317,7 @@ class MedicalRecordsController {
                 const userId = req.user.id;
                 // Get medical record
                 const medicalRecord = yield prisma.patientMedicalHistory.findFirst({
-                    where: { id: Number(recordId) },
+                    where: { id: recordId },
                     include: { creator: true }
                 });
                 if (!medicalRecord) {
@@ -335,7 +335,7 @@ class MedicalRecordsController {
                 }
                 // Update medical record
                 const updatedRecord = yield prisma.patientMedicalHistory.update({
-                    where: { id: Number(recordId) },
+                    where: { id: recordId },
                     data: {
                         title,
                         content,
@@ -371,7 +371,7 @@ class MedicalRecordsController {
                 const userId = req.user.id;
                 // Get medical record
                 const medicalRecord = yield prisma.patientMedicalHistory.findFirst({
-                    where: { id: Number(recordId) },
+                    where: { id: recordId },
                     include: { patient: true }
                 });
                 if (!medicalRecord) {
@@ -392,7 +392,7 @@ class MedicalRecordsController {
                     yield prisma.medicalRecordPrivacy.upsert({
                         where: {
                             medicalRecordId_settingType: {
-                                medicalRecordId: Number(recordId),
+                                medicalRecordId: recordId,
                                 settingType: setting.settingType
                             }
                         },
@@ -400,7 +400,7 @@ class MedicalRecordsController {
                             isEnabled: setting.isEnabled
                         },
                         create: {
-                            medicalRecordId: Number(recordId),
+                            medicalRecordId: recordId,
                             settingType: setting.settingType,
                             isEnabled: setting.isEnabled
                         }
@@ -432,7 +432,7 @@ class MedicalRecordsController {
                 const userId = req.user.id;
                 // Get medical record
                 const medicalRecord = yield prisma.patientMedicalHistory.findFirst({
-                    where: { id: Number(recordId) },
+                    where: { id: recordId },
                     include: { patient: true }
                 });
                 if (!medicalRecord) {
@@ -461,7 +461,7 @@ class MedicalRecordsController {
                 // Create sharing record
                 const sharing = yield prisma.consultationSharing.create({
                     data: {
-                        consultationId: medicalRecord.consultationId || 0,
+                        consultationId: medicalRecord.consultationId || '',
                         sharedWithDoctorId: doctorId,
                         accessLevel: accessLevel || client_2.AccessLevel.READ_ONLY,
                         sharedBy: userId,
@@ -494,7 +494,7 @@ class MedicalRecordsController {
                 const userId = req.user.id;
                 // Get medical record
                 const medicalRecord = yield prisma.patientMedicalHistory.findFirst({
-                    where: { id: Number(recordId) }
+                    where: { id: recordId }
                 });
                 if (!medicalRecord) {
                     return res.status(404).json({
@@ -511,7 +511,7 @@ class MedicalRecordsController {
                 }
                 // Delete medical record (cascade will handle related records)
                 yield prisma.patientMedicalHistory.delete({
-                    where: { id: Number(recordId) }
+                    where: { id: recordId }
                 });
                 // Audit log
                 yield audit_service_1.AuditService.logUserActivity(userId, 'DELETE_MEDICAL_RECORD', 'DATA_MODIFICATION', `Medical record ${recordId} deleted`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'MEDICAL_RECORD', recordId);

@@ -32,7 +32,7 @@ class DiagnosesController {
                 }
                 // Verify patient exists
                 const patient = yield prisma.user.findUnique({
-                    where: { id: parseInt(patientId) },
+                    where: { id: patientId },
                     include: { patientInfo: true }
                 });
                 if (!patient || patient.role !== 'PATIENT') {
@@ -45,7 +45,7 @@ class DiagnosesController {
                 // Verify consultation exists if provided
                 if (consultationId) {
                     const consultation = yield prisma.consultation.findUnique({
-                        where: { id: parseInt(consultationId) }
+                        where: { id: consultationId }
                     });
                     if (!consultation) {
                         res.status(404).json({
@@ -58,9 +58,9 @@ class DiagnosesController {
                 // Create diagnosis
                 const diagnosis = yield prisma.diagnosis.create({
                     data: {
-                        patientId: parseInt(patientId),
+                        patientId: patientId,
                         doctorId,
-                        consultationId: consultationId ? parseInt(consultationId) : null,
+                        consultationId: consultationId ? consultationId : null,
                         diagnosisCode: diagnosisCode || null,
                         diagnosisName,
                         description: description || null,
@@ -119,7 +119,7 @@ class DiagnosesController {
             try {
                 const userId = req.user.id;
                 const userRole = req.user.role;
-                const patientId = parseInt(req.params.patientId);
+                const patientId = req.params.patientId;
                 // Verify patient exists
                 const patient = yield prisma.user.findUnique({
                     where: { id: patientId },
@@ -204,7 +204,7 @@ class DiagnosesController {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const doctorId = req.user.id;
-                const diagnosisId = parseInt(req.params.diagnosisId);
+                const diagnosisId = req.params.diagnosisId;
                 const { diagnosisCode, diagnosisName, description, severity, status, onsetDate, resolvedAt, notes, isPrimary } = req.body;
                 // Verify diagnosis exists and doctor owns it
                 const existingDiagnosis = yield prisma.diagnosis.findFirst({
@@ -277,7 +277,7 @@ class DiagnosesController {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const doctorId = req.user.id;
-                const diagnosisId = parseInt(req.params.diagnosisId);
+                const diagnosisId = req.params.diagnosisId;
                 // Verify diagnosis exists and doctor owns it
                 const existingDiagnosis = yield prisma.diagnosis.findFirst({
                     where: { id: diagnosisId, doctorId }

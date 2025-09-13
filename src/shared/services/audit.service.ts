@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 // Audit log interface
 export interface IAuditLog {
   id?: string;
-  userId?: number;
+  userId?: string;
   action: string;
   category: AuditCategory;
   level: AuditLevel;
@@ -28,7 +28,7 @@ export interface ISecurityEvent {
   description: string;
   ipAddress: string;
   userAgent: string;
-  userId?: number;
+  userId?: string;
   details?: any;
   timestamp: Date;
   resolved: boolean;
@@ -39,7 +39,7 @@ export class AuditService {
    * Log user activity for audit trail
    */
   static async logUserActivity(
-    userId: number,
+    userId: string,
     action: string,
     category: AuditCategory,
     description: string,
@@ -90,7 +90,7 @@ export class AuditService {
     description: string,
     ipAddress: string,
     userAgent: string,
-    userId?: number,
+    userId?: string,
     details?: any
   ): Promise<void> {
     try {
@@ -131,7 +131,7 @@ export class AuditService {
    * Log authentication attempts
    */
   static async logAuthAttempt(
-    userId: number | null,
+    userId: string | null,
     action: 'LOGIN' | 'LOGOUT' | 'REGISTER' | 'PASSWORD_CHANGE' | 'PASSWORD_RESET',
     success: boolean,
     ipAddress: string,
@@ -142,14 +142,14 @@ export class AuditService {
     const description = `${action} ${success ? 'successful' : 'failed'} for user ${userId || 'unknown'}`;
 
     await this.logUserActivity(
-      userId || 0,
+      userId || '',
       action,
       AuditCategory.AUTHENTICATION,
       description,
       ipAddress,
       userAgent,
       'USER',
-      userId?.toString(),
+      userId || undefined,
       { success, ...details }
     );
 
@@ -171,7 +171,7 @@ export class AuditService {
    * Log data access
    */
   static async logDataAccess(
-    userId: number,
+    userId: string,
     resourceType: string,
     resourceId: string,
     action: 'READ' | 'CREATE' | 'UPDATE' | 'DELETE',
@@ -202,7 +202,7 @@ export class AuditService {
     activity: string,
     ipAddress: string,
     userAgent: string,
-    userId?: number,
+    userId?: string,
     details?: any
   ): Promise<void> {
     await this.logSecurityEvent(
@@ -222,7 +222,7 @@ export class AuditService {
   static async logRateLimitViolation(
     ipAddress: string,
     userAgent: string,
-    userId?: number,
+    userId?: string,
     details?: any
   ): Promise<void> {
     await this.logSecurityEvent(
@@ -240,7 +240,7 @@ export class AuditService {
    * Log failed authorization attempts
    */
   static async logAuthorizationFailure(
-    userId: number,
+    userId: string,
     resourceType: string,
     resourceId: string,
     action: string,
@@ -290,7 +290,7 @@ export class AuditService {
    * Get audit logs for a user
    */
   static async getUserAuditLogs(
-    userId: number,
+    userId: string,
     limit: number = 100,
     offset: number = 0
   ): Promise<IAuditLog[]> {
@@ -390,7 +390,7 @@ export class AuditService {
   /**
    * Mark security event as resolved
    */
-  static async resolveSecurityEvent(eventId: string, resolvedByUserId?: number): Promise<void> {
+  static async resolveSecurityEvent(eventId: string, resolvedByUserId?: string): Promise<void> {
     try {
       await prisma.securityEvent.update({
         where: { id: eventId },

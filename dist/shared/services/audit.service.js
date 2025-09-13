@@ -92,7 +92,7 @@ class AuditService {
         return __awaiter(this, void 0, void 0, function* () {
             const level = success ? client_1.AuditLevel.INFO : client_1.AuditLevel.WARNING;
             const description = `${action} ${success ? 'successful' : 'failed'} for user ${userId || 'unknown'}`;
-            yield this.logUserActivity(userId || 0, action, client_1.AuditCategory.AUTHENTICATION, description, ipAddress, userAgent, 'USER', userId === null || userId === void 0 ? void 0 : userId.toString(), Object.assign({ success }, details));
+            yield this.logUserActivity(userId || '', action, client_1.AuditCategory.AUTHENTICATION, description, ipAddress, userAgent, 'USER', userId || undefined, Object.assign({ success }, details));
             // Log security event for failed attempts
             if (!success) {
                 yield this.logSecurityEvent('AUTH_FAILURE', client_1.AuditLevel.WARNING, `Failed ${action} attempt from ${ipAddress}`, ipAddress, userAgent, userId || undefined, details);

@@ -58,6 +58,7 @@ const consultations_routes_1 = require("./modules/consultations/consultations.ro
 const prescriptions_routes_1 = require("./modules/prescriptions/prescriptions.routes");
 const diagnoses_routes_1 = require("./modules/diagnoses/diagnoses.routes");
 const self_check_routes_1 = require("./modules/self-check/self-check.routes");
+const organizations_routes_1 = require("./modules/organizations/organizations.routes");
 // Import middleware
 const error_handler_1 = require("./shared/middleware/error-handler");
 const validation_1 = require("./utils/validation");
@@ -201,6 +202,7 @@ app.use('/api/consultations', consultations_routes_1.consultationsRoutes);
 app.use('/api/prescriptions', prescriptions_routes_1.prescriptionsRoutes);
 app.use('/api/diagnoses', diagnoses_routes_1.diagnosesRoutes);
 app.use('/api/self-check', self_check_routes_1.selfCheckRoutes);
+app.use('/api/organizations', organizations_routes_1.organizationsRoutes);
 // Serve static files with enhanced security
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads'), {
     setHeaders: (res, filePath) => {

@@ -63,12 +63,14 @@ class PrescriptionsController {
     getPatientInfoByUserId(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const userId = parseInt(req.params.userId);
+                const userId = req.params.userId;
                 const doctorId = req.user.id;
-                if (isNaN(userId)) {
+                // Validate UUID format
+                const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+                if (!uuidRegex.test(userId)) {
                     res.status(400).json({
                         success: false,
-                        message: 'Invalid user ID'
+                        message: 'Invalid user ID format'
                     });
                     return;
                 }
@@ -115,7 +117,7 @@ class PrescriptionsController {
                 }
                 // Verify patient exists
                 const patient = yield prisma.user.findUnique({
-                    where: { id: parseInt(patientId) },
+                    where: { id: patientId },
                     include: { patientInfo: true }
                 });
                 if (!patient || patient.role !== 'PATIENT') {
@@ -128,7 +130,7 @@ class PrescriptionsController {
                 // Verify consultation exists if provided
                 if (consultationId) {
                     const consultation = yield prisma.consultation.findUnique({
-                        where: { id: parseInt(consultationId) }
+                        where: { id: consultationId }
                     });
                     if (!consultation) {
                         res.status(404).json({
@@ -141,9 +143,9 @@ class PrescriptionsController {
                 // Create prescription
                 const prescription = yield prisma.prescription.create({
                     data: {
-                        patientId: parseInt(patientId),
+                        patientId: patientId,
                         doctorId,
-                        consultationId: consultationId ? parseInt(consultationId) : null,
+                        consultationId: consultationId ? consultationId : null,
                         medicationName,
                         dosage,
                         frequency,
@@ -167,8 +169,8 @@ class PrescriptionsController {
                 // Log audit event
                 yield audit_service_1.AuditService.logUserActivity(doctorId, 'CREATE_PRESCRIPTION', 'DATA_MODIFICATION', `Doctor created prescription for patient ${patientId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'PRESCRIPTION', prescription.id.toString(), {
                     medicationName,
-                    patientId: parseInt(patientId),
-                    consultationId: consultationId ? parseInt(consultationId) : null
+                    patientId: patientId,
+                    consultationId: consultationId ? consultationId : null
                 });
                 res.status(201).json({
                     success: true,
@@ -192,7 +194,7 @@ class PrescriptionsController {
             try {
                 const userId = req.user.id;
                 const userRole = req.user.role;
-                const patientId = parseInt(req.params.patientId);
+                const patientId = req.params.patientId;
                 // Verify patient exists
                 const patient = yield prisma.user.findUnique({
                     where: { id: patientId },
@@ -245,7 +247,7 @@ class PrescriptionsController {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const userId = req.user.id;
-                const doctorId = parseInt(req.params.doctorId);
+                const doctorId = req.params.doctorId;
                 // Verify doctor exists
                 const doctor = yield prisma.user.findUnique({
                     where: { id: doctorId },
@@ -299,7 +301,7 @@ class PrescriptionsController {
             try {
                 const userId = req.user.id;
                 const userRole = req.user.role;
-                const prescriptionId = parseInt(req.params.id);
+                const prescriptionId = req.params.id;
                 // Get prescription
                 const prescription = yield prisma.prescription.findUnique({
                     where: { id: prescriptionId },
@@ -356,7 +358,7 @@ class PrescriptionsController {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const doctorId = req.user.id;
-                const prescriptionId = parseInt(req.params.id);
+                const prescriptionId = req.params.id;
                 const updateData = req.body;
                 // Get existing prescription
                 const existingPrescription = yield prisma.prescription.findUnique({
@@ -436,7 +438,7 @@ class PrescriptionsController {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const doctorId = req.user.id;
-                const prescriptionId = parseInt(req.params.id);
+                const prescriptionId = req.params.id;
                 // Get existing prescription
                 const existingPrescription = yield prisma.prescription.findUnique({
                     where: { id: prescriptionId }
@@ -486,7 +488,7 @@ class PrescriptionsController {
             try {
                 const userId = req.user.id;
                 const userRole = req.user.role;
-                const consultationId = parseInt(req.params.consultationId);
+                const consultationId = req.params.consultationId;
                 // Get consultation
                 const consultation = yield prisma.consultation.findUnique({
                     where: { id: consultationId },

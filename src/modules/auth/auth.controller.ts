@@ -465,7 +465,7 @@ export class AuthController {
       }
 
       // TODO: Check if user has admin role
-      await AuthService.resetPassword(parseInt(userId), newPassword);
+      await AuthService.resetPassword(userId, newPassword);
 
       const response: IApiResponse = {
         success: true,
@@ -503,7 +503,7 @@ export class AuthController {
       }
 
       // TODO: Check if user has admin role
-      await AuthService.deactivateUser(parseInt(userId));
+      await AuthService.deactivateUser(userId);
 
       const response: IApiResponse = {
         success: true,

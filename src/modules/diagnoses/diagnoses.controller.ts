@@ -36,7 +36,7 @@ export class DiagnosesController {
 
       // Verify patient exists
       const patient = await prisma.user.findUnique({
-        where: { id: parseInt(patientId) },
+        where: { id: patientId },
         include: { patientInfo: true }
       });
 
@@ -51,7 +51,7 @@ export class DiagnosesController {
       // Verify consultation exists if provided
       if (consultationId) {
         const consultation = await prisma.consultation.findUnique({
-          where: { id: parseInt(consultationId) }
+          where: { id: consultationId }
         });
 
         if (!consultation) {
@@ -66,9 +66,9 @@ export class DiagnosesController {
       // Create diagnosis
       const diagnosis = await prisma.diagnosis.create({
         data: {
-          patientId: parseInt(patientId),
+          patientId: patientId,
           doctorId,
-          consultationId: consultationId ? parseInt(consultationId) : null,
+          consultationId: consultationId ? consultationId : null,
           diagnosisCode: diagnosisCode || null,
           diagnosisName,
           description: description || null,
@@ -137,7 +137,7 @@ export class DiagnosesController {
     try {
       const userId = (req as any).user.id;
       const userRole = (req as any).user.role;
-      const patientId = parseInt(req.params.patientId);
+      const patientId = req.params.patientId;
 
       // Verify patient exists
       const patient = await prisma.user.findUnique({
@@ -227,7 +227,7 @@ export class DiagnosesController {
   async updateDiagnosis(req: Request, res: Response): Promise<void> {
     try {
       const doctorId = (req as any).user.id;
-      const diagnosisId = parseInt(req.params.diagnosisId);
+      const diagnosisId = req.params.diagnosisId;
       const {
         diagnosisCode,
         diagnosisName,
@@ -323,7 +323,7 @@ export class DiagnosesController {
   async deleteDiagnosis(req: Request, res: Response): Promise<void> {
     try {
       const doctorId = (req as any).user.id;
-      const diagnosisId = parseInt(req.params.diagnosisId);
+      const diagnosisId = req.params.diagnosisId;
 
       // Verify diagnosis exists and doctor owns it
       const existingDiagnosis = await prisma.diagnosis.findFirst({

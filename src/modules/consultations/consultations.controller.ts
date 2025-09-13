@@ -119,7 +119,7 @@ export class ConsultationsController {
 
       // Verify patient exists
       const patient = await prisma.user.findUnique({
-        where: { id: parseInt(patientId) },
+        where: { id: patientId },
         include: { patientInfo: true }
       });
 
@@ -131,13 +131,13 @@ export class ConsultationsController {
       }
 
       // Generate unique consultation code
-      const consultationCode = this.generateDirectConsultationCode(doctorId, parseInt(patientId));
+      const consultationCode = this.generateDirectConsultationCode(doctorId, patientId);
 
       // Create consultation
       const consultation = await prisma.consultation.create({
         data: {
           doctorId,
-          patientId: parseInt(patientId),
+          patientId: patientId,
           startTime: new Date(startTime || new Date()),
           endTime: endTime ? new Date(endTime) : null,
           consultationCode,
@@ -201,7 +201,7 @@ export class ConsultationsController {
 
       // Get consultation
       const consultation = await prisma.consultation.findFirst({
-        where: { id: Number(consultationId) },
+        where: { id: consultationId },
         include: {
           patient: {
             select: {
@@ -270,7 +270,7 @@ export class ConsultationsController {
 
       // Get consultation and verify doctor owns it
       const consultation = await prisma.consultation.findFirst({
-        where: { id: Number(consultationId), doctorId: userId }
+        where: { id: consultationId, doctorId: userId }
       });
 
       if (!consultation) {
@@ -282,7 +282,7 @@ export class ConsultationsController {
 
       // Update consultation
       const updatedConsultation = await prisma.consultation.update({
-        where: { id: Number(consultationId) },
+        where: { id: consultationId },
         data: {
           notes,
           diagnosis,
@@ -298,24 +298,24 @@ export class ConsultationsController {
         await prisma.$transaction(async (tx) => {
           if (isPublic) {
             await tx.consultationPrivacy.deleteMany({
-              where: { consultationId: Number(consultationId) }
+              where: { consultationId: consultationId }
             });
 
             await tx.consultationSharing.updateMany({
-              where: { consultationId: Number(consultationId) },
+              where: { consultationId: consultationId },
               data: { isActive: true }
             });
 
             await tx.consultationSharing.upsert({
               where: {
                 consultationId_sharedWithDoctorId: {
-                  consultationId: Number(consultationId),
+                  consultationId: consultationId,
                   sharedWithDoctorId: updatedConsultation.doctorId
                 }
               },
               update: { isActive: true, accessLevel: AccessLevel.READ_ONLY, sharedBy: userId, expiresAt: null },
               create: {
-                consultationId: Number(consultationId),
+                consultationId: consultationId,
                 sharedWithDoctorId: updatedConsultation.doctorId,
                 accessLevel: AccessLevel.READ_ONLY,
                 sharedBy: userId,
@@ -324,19 +324,19 @@ export class ConsultationsController {
             });
           } else {
             await tx.consultationSharing.deleteMany({
-              where: { consultationId: Number(consultationId) }
+              where: { consultationId: consultationId }
             });
 
             await tx.consultationPrivacy.upsert({
               where: {
                 consultationId_settingType: {
-                  consultationId: Number(consultationId),
+                  consultationId: consultationId,
                   settingType: PrivacySettingType.PUBLIC_READ
                 }
               },
               update: { isEnabled: false },
               create: {
-                consultationId: Number(consultationId),
+                consultationId: consultationId,
                 settingType: PrivacySettingType.PUBLIC_READ,
                 isEnabled: false
               }
@@ -444,7 +444,7 @@ export class ConsultationsController {
 
       // Get health scan
       const healthScan = await prisma.healthScan.findFirst({
-        where: { id: Number(scanId) },
+        where: { id: scanId },
         include: {
           consultation: {
             include: {
@@ -507,7 +507,7 @@ export class ConsultationsController {
 
       // Get consultation
       const consultation = await prisma.consultation.findFirst({
-        where: { id: Number(consultationId) },
+        where: { id: consultationId },
         include: { patient: true }
       });
 
@@ -532,31 +532,31 @@ export class ConsultationsController {
         const result = await prisma.$transaction(async (tx) => {
           // Update consultation flag
           await tx.consultation.update({
-            where: { id: Number(consultationId) },
+            where: { id: consultationId },
             data: { isPublic }
           });
 
           if (isPublic) {
             // PUBLIC: delete privacy rows, ensure sharing
             const deletedPrivacy = await tx.consultationPrivacy.deleteMany({
-              where: { consultationId: Number(consultationId) }
+              where: { consultationId: consultationId }
             });
 
             await tx.consultationSharing.updateMany({
-              where: { consultationId: Number(consultationId) },
+              where: { consultationId: consultationId },
               data: { isActive: true }
             });
 
             await tx.consultationSharing.upsert({
               where: {
                 consultationId_sharedWithDoctorId: {
-                  consultationId: Number(consultationId),
+                  consultationId: consultationId,
                   sharedWithDoctorId: consultation.doctorId
                 }
               },
               update: { isActive: true, accessLevel: AccessLevel.READ_ONLY, sharedBy: userId, expiresAt: null },
               create: {
-                consultationId: Number(consultationId),
+                consultationId: consultationId,
                 sharedWithDoctorId: consultation.doctorId,
                 accessLevel: AccessLevel.READ_ONLY,
                 sharedBy: userId,
@@ -568,19 +568,19 @@ export class ConsultationsController {
           } else {
             // PRIVATE: delete sharing rows, ensure privacy PUBLIC_READ disabled
             const deletedSharing = await tx.consultationSharing.deleteMany({
-              where: { consultationId: Number(consultationId) }
+              where: { consultationId: consultationId }
             });
 
             await tx.consultationPrivacy.upsert({
               where: {
                 consultationId_settingType: {
-                  consultationId: Number(consultationId),
+                  consultationId: consultationId,
                   settingType: PrivacySettingType.PUBLIC_READ
                 }
               },
               update: { isEnabled: false },
               create: {
-                consultationId: Number(consultationId),
+                consultationId: consultationId,
                 settingType: PrivacySettingType.PUBLIC_READ,
                 isEnabled: false
               }
@@ -600,13 +600,13 @@ export class ConsultationsController {
           await prisma.consultationPrivacy.upsert({
             where: {
               consultationId_settingType: {
-                consultationId: Number(consultationId),
+                consultationId: consultationId,
                 settingType: setting.settingType
               }
             },
             update: { isEnabled: setting.isEnabled },
             create: {
-              consultationId: Number(consultationId),
+              consultationId: consultationId,
               settingType: setting.settingType,
               isEnabled: setting.isEnabled
             }
@@ -651,7 +651,7 @@ export class ConsultationsController {
 
       // Get consultation
       const consultation = await prisma.consultation.findFirst({
-        where: { id: Number(consultationId) },
+        where: { id: consultationId },
         include: { patient: true }
       });
 
@@ -685,7 +685,7 @@ export class ConsultationsController {
       // Create sharing record
       const sharing = await prisma.consultationSharing.create({
         data: {
-          consultationId: Number(consultationId),
+          consultationId: consultationId,
           sharedWithDoctorId: doctorId,
           accessLevel: accessLevel || AccessLevel.READ_ONLY,
           sharedBy: userId,
@@ -722,7 +722,7 @@ export class ConsultationsController {
   }
 
   // Private method to check consultation access
-  private async checkConsultationAccess(userId: number, userRole: Role, consultation: any): Promise<boolean> {
+  private async checkConsultationAccess(userId: string, userRole: Role, consultation: any): Promise<boolean> {
     // Patient can always see their own consultations
     if (consultation.patientId === userId) return true;
 
@@ -748,7 +748,7 @@ export class ConsultationsController {
   }
 
   // Private method to check health scan access
-  private async checkHealthScanAccess(userId: number, userRole: Role, healthScan: any): Promise<boolean> {
+  private async checkHealthScanAccess(userId: string, userRole: Role, healthScan: any): Promise<boolean> {
     const consultation = healthScan.consultation;
 
     // Patient can always see their own health scans

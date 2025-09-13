@@ -52,13 +52,15 @@ export class PrescriptionsController {
   // Get patient info by user ID (for doctor-meet component)
   async getPatientInfoByUserId(req: Request, res: Response): Promise<void> {
     try {
-      const userId = parseInt(req.params.userId);
+      const userId = req.params.userId;
       const doctorId = (req as any).user.id;
 
-      if (isNaN(userId)) {
+      // Validate UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(userId)) {
         res.status(400).json({
           success: false,
-          message: 'Invalid user ID'
+          message: 'Invalid user ID format'
         });
         return;
       }
@@ -121,7 +123,7 @@ export class PrescriptionsController {
 
       // Verify patient exists
       const patient = await prisma.user.findUnique({
-        where: { id: parseInt(patientId) },
+        where: { id: patientId },
         include: { patientInfo: true }
       });
 
@@ -136,7 +138,7 @@ export class PrescriptionsController {
       // Verify consultation exists if provided
       if (consultationId) {
         const consultation = await prisma.consultation.findUnique({
-          where: { id: parseInt(consultationId) }
+          where: { id: consultationId }
         });
 
         if (!consultation) {
@@ -151,9 +153,9 @@ export class PrescriptionsController {
       // Create prescription
       const prescription = await prisma.prescription.create({
         data: {
-          patientId: parseInt(patientId),
+          patientId: patientId,
           doctorId,
-          consultationId: consultationId ? parseInt(consultationId) : null,
+          consultationId: consultationId ? consultationId : null,
           medicationName,
           dosage,
           frequency,
@@ -187,8 +189,8 @@ export class PrescriptionsController {
         prescription.id.toString(),
         {
           medicationName,
-          patientId: parseInt(patientId),
-          consultationId: consultationId ? parseInt(consultationId) : null
+          patientId: patientId,
+          consultationId: consultationId ? consultationId : null
         }
       );
 
@@ -213,7 +215,7 @@ export class PrescriptionsController {
     try {
       const userId = (req as any).user.id;
       const userRole = (req as any).user.role;
-      const patientId = parseInt(req.params.patientId);
+      const patientId = req.params.patientId;
 
       // Verify patient exists
       const patient = await prisma.user.findUnique({
@@ -270,7 +272,7 @@ export class PrescriptionsController {
   async getDoctorPrescriptions(req: Request, res: Response): Promise<void> {
     try {
       const userId = (req as any).user.id;
-      const doctorId = parseInt(req.params.doctorId);
+      const doctorId = req.params.doctorId;
 
       // Verify doctor exists
       const doctor = await prisma.user.findUnique({
@@ -328,7 +330,7 @@ export class PrescriptionsController {
     try {
       const userId = (req as any).user.id;
       const userRole = (req as any).user.role;
-      const prescriptionId = parseInt(req.params.id);
+      const prescriptionId = req.params.id;
 
       // Get prescription
       const prescription = await prisma.prescription.findUnique({
@@ -389,7 +391,7 @@ export class PrescriptionsController {
   async updatePrescription(req: Request, res: Response): Promise<void> {
     try {
       const doctorId = (req as any).user.id;
-      const prescriptionId = parseInt(req.params.id);
+      const prescriptionId = req.params.id;
       const updateData = req.body;
 
       // Get existing prescription
@@ -475,7 +477,7 @@ export class PrescriptionsController {
   async deletePrescription(req: Request, res: Response): Promise<void> {
     try {
       const doctorId = (req as any).user.id;
-      const prescriptionId = parseInt(req.params.id);
+      const prescriptionId = req.params.id;
 
       // Get existing prescription
       const existingPrescription = await prisma.prescription.findUnique({
@@ -540,7 +542,7 @@ export class PrescriptionsController {
     try {
       const userId = (req as any).user.id;
       const userRole = (req as any).user.role;
-      const consultationId = parseInt(req.params.consultationId);
+      const consultationId = req.params.consultationId;
 
       // Get consultation
       const consultation = await prisma.consultation.findUnique({

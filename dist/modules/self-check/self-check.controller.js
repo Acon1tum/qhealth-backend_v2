@@ -269,7 +269,7 @@ class SelfCheckController {
                 // Get self-check consultation
                 const selfCheckResult = yield prisma.consultation.findFirst({
                     where: {
-                        id: Number(consultationId),
+                        id: consultationId,
                         doctorId: userId,
                         patientId: userId,
                         notes: {
@@ -326,7 +326,7 @@ class SelfCheckController {
                 // Get self-check consultation
                 const selfCheckResult = yield prisma.consultation.findFirst({
                     where: {
-                        id: Number(consultationId),
+                        id: consultationId,
                         doctorId: userId,
                         patientId: userId,
                         notes: {
@@ -343,7 +343,7 @@ class SelfCheckController {
                 // Delete related records (cascade will handle health scan and medical history)
                 yield prisma.consultation.delete({
                     where: {
-                        id: Number(consultationId)
+                        id: consultationId
                     }
                 });
                 // Audit log

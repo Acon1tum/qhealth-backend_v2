@@ -232,7 +232,7 @@ export const requireOwnershipOrAdmin = (resourceUserIdField: string = 'userId') 
       return;
     }
 
-    if (parseInt(resourceUserId) !== req.user.id) {
+    if (resourceUserId !== req.user.id) {
       const response: IApiResponse = {
         success: false,
         message: 'Access denied to this resource',
@@ -285,7 +285,7 @@ export const requirePatientAccess = (req: Request, res: Response, next: NextFunc
   }
 
   // Patient can only access their own data
-  if (req.user.role === Role.PATIENT && parseInt(patientId) === req.user.id) {
+  if (req.user.role === Role.PATIENT && patientId === req.user.id) {
     next();
     return;
   }

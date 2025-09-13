@@ -439,7 +439,7 @@ AuthController.resetPassword = (0, error_handler_1.asyncHandler)((req, res) => _
             return;
         }
         // TODO: Check if user has admin role
-        yield auth_service_1.AuthService.resetPassword(parseInt(userId), newPassword);
+        yield auth_service_1.AuthService.resetPassword(userId, newPassword);
         const response = {
             success: true,
             message: 'Password reset successfully',
@@ -474,7 +474,7 @@ AuthController.deactivateUser = (0, error_handler_1.asyncHandler)((req, res) => 
             return;
         }
         // TODO: Check if user has admin role
-        yield auth_service_1.AuthService.deactivateUser(parseInt(userId));
+        yield auth_service_1.AuthService.deactivateUser(userId);
         const response = {
             success: true,
             message: 'User deactivated successfully',

@@ -113,7 +113,7 @@ class ConsultationsController {
                 }
                 // Verify patient exists
                 const patient = yield prisma.user.findUnique({
-                    where: { id: parseInt(patientId) },
+                    where: { id: patientId },
                     include: { patientInfo: true }
                 });
                 if (!patient || patient.role !== 'PATIENT') {
@@ -123,12 +123,12 @@ class ConsultationsController {
                     });
                 }
                 // Generate unique consultation code
-                const consultationCode = this.generateDirectConsultationCode(doctorId, parseInt(patientId));
+                const consultationCode = this.generateDirectConsultationCode(doctorId, patientId);
                 // Create consultation
                 const consultation = yield prisma.consultation.create({
                     data: {
                         doctorId,
-                        patientId: parseInt(patientId),
+                        patientId: patientId,
                         startTime: new Date(startTime || new Date()),
                         endTime: endTime ? new Date(endTime) : null,
                         consultationCode,
@@ -181,7 +181,7 @@ class ConsultationsController {
                 const userRole = req.user.role;
                 // Get consultation
                 const consultation = yield prisma.consultation.findFirst({
-                    where: { id: Number(consultationId) },
+                    where: { id: consultationId },
                     include: {
                         patient: {
                             select: {
@@ -246,7 +246,7 @@ class ConsultationsController {
                 }
                 // Get consultation and verify doctor owns it
                 const consultation = yield prisma.consultation.findFirst({
-                    where: { id: Number(consultationId), doctorId: userId }
+                    where: { id: consultationId, doctorId: userId }
                 });
                 if (!consultation) {
                     return res.status(404).json({
@@ -256,7 +256,7 @@ class ConsultationsController {
                 }
                 // Update consultation
                 const updatedConsultation = yield prisma.consultation.update({
-                    where: { id: Number(consultationId) },
+                    where: { id: consultationId },
                     data: {
                         notes,
                         diagnosis,
@@ -271,22 +271,22 @@ class ConsultationsController {
                     yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
                         if (isPublic) {
                             yield tx.consultationPrivacy.deleteMany({
-                                where: { consultationId: Number(consultationId) }
+                                where: { consultationId: consultationId }
                             });
                             yield tx.consultationSharing.updateMany({
-                                where: { consultationId: Number(consultationId) },
+                                where: { consultationId: consultationId },
                                 data: { isActive: true }
                             });
                             yield tx.consultationSharing.upsert({
                                 where: {
                                     consultationId_sharedWithDoctorId: {
-                                        consultationId: Number(consultationId),
+                                        consultationId: consultationId,
                                         sharedWithDoctorId: updatedConsultation.doctorId
                                     }
                                 },
                                 update: { isActive: true, accessLevel: client_2.AccessLevel.READ_ONLY, sharedBy: userId, expiresAt: null },
                                 create: {
-                                    consultationId: Number(consultationId),
+                                    consultationId: consultationId,
                                     sharedWithDoctorId: updatedConsultation.doctorId,
                                     accessLevel: client_2.AccessLevel.READ_ONLY,
                                     sharedBy: userId,
@@ -296,18 +296,18 @@ class ConsultationsController {
                         }
                         else {
                             yield tx.consultationSharing.deleteMany({
-                                where: { consultationId: Number(consultationId) }
+                                where: { consultationId: consultationId }
                             });
                             yield tx.consultationPrivacy.upsert({
                                 where: {
                                     consultationId_settingType: {
-                                        consultationId: Number(consultationId),
+                                        consultationId: consultationId,
                                         settingType: client_2.PrivacySettingType.PUBLIC_READ
                                     }
                                 },
                                 update: { isEnabled: false },
                                 create: {
-                                    consultationId: Number(consultationId),
+                                    consultationId: consultationId,
                                     settingType: client_2.PrivacySettingType.PUBLIC_READ,
                                     isEnabled: false
                                 }
@@ -387,7 +387,7 @@ class ConsultationsController {
                 const userRole = req.user.role;
                 // Get health scan
                 const healthScan = yield prisma.healthScan.findFirst({
-                    where: { id: Number(scanId) },
+                    where: { id: scanId },
                     include: {
                         consultation: {
                             include: {
@@ -447,7 +447,7 @@ class ConsultationsController {
                 const userId = req.user.id;
                 // Get consultation
                 const consultation = yield prisma.consultation.findFirst({
-                    where: { id: Number(consultationId) },
+                    where: { id: consultationId },
                     include: { patient: true }
                 });
                 if (!consultation) {
@@ -469,28 +469,28 @@ class ConsultationsController {
                     const result = yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
                         // Update consultation flag
                         yield tx.consultation.update({
-                            where: { id: Number(consultationId) },
+                            where: { id: consultationId },
                             data: { isPublic }
                         });
                         if (isPublic) {
                             // PUBLIC: delete privacy rows, ensure sharing
                             const deletedPrivacy = yield tx.consultationPrivacy.deleteMany({
-                                where: { consultationId: Number(consultationId) }
+                                where: { consultationId: consultationId }
                             });
                             yield tx.consultationSharing.updateMany({
-                                where: { consultationId: Number(consultationId) },
+                                where: { consultationId: consultationId },
                                 data: { isActive: true }
                             });
                             yield tx.consultationSharing.upsert({
                                 where: {
                                     consultationId_sharedWithDoctorId: {
-                                        consultationId: Number(consultationId),
+                                        consultationId: consultationId,
                                         sharedWithDoctorId: consultation.doctorId
                                     }
                                 },
                                 update: { isActive: true, accessLevel: client_2.AccessLevel.READ_ONLY, sharedBy: userId, expiresAt: null },
                                 create: {
-                                    consultationId: Number(consultationId),
+                                    consultationId: consultationId,
                                     sharedWithDoctorId: consultation.doctorId,
                                     accessLevel: client_2.AccessLevel.READ_ONLY,
                                     sharedBy: userId,
@@ -502,18 +502,18 @@ class ConsultationsController {
                         else {
                             // PRIVATE: delete sharing rows, ensure privacy PUBLIC_READ disabled
                             const deletedSharing = yield tx.consultationSharing.deleteMany({
-                                where: { consultationId: Number(consultationId) }
+                                where: { consultationId: consultationId }
                             });
                             yield tx.consultationPrivacy.upsert({
                                 where: {
                                     consultationId_settingType: {
-                                        consultationId: Number(consultationId),
+                                        consultationId: consultationId,
                                         settingType: client_2.PrivacySettingType.PUBLIC_READ
                                     }
                                 },
                                 update: { isEnabled: false },
                                 create: {
-                                    consultationId: Number(consultationId),
+                                    consultationId: consultationId,
                                     settingType: client_2.PrivacySettingType.PUBLIC_READ,
                                     isEnabled: false
                                 }
@@ -530,13 +530,13 @@ class ConsultationsController {
                         yield prisma.consultationPrivacy.upsert({
                             where: {
                                 consultationId_settingType: {
-                                    consultationId: Number(consultationId),
+                                    consultationId: consultationId,
                                     settingType: setting.settingType
                                 }
                             },
                             update: { isEnabled: setting.isEnabled },
                             create: {
-                                consultationId: Number(consultationId),
+                                consultationId: consultationId,
                                 settingType: setting.settingType,
                                 isEnabled: setting.isEnabled
                             }
@@ -570,7 +570,7 @@ class ConsultationsController {
                 const userId = req.user.id;
                 // Get consultation
                 const consultation = yield prisma.consultation.findFirst({
-                    where: { id: Number(consultationId) },
+                    where: { id: consultationId },
                     include: { patient: true }
                 });
                 if (!consultation) {
@@ -599,7 +599,7 @@ class ConsultationsController {
                 // Create sharing record
                 const sharing = yield prisma.consultationSharing.create({
                     data: {
-                        consultationId: Number(consultationId),
+                        consultationId: consultationId,
                         sharedWithDoctorId: doctorId,
                         accessLevel: accessLevel || client_2.AccessLevel.READ_ONLY,
                         sharedBy: userId,

@@ -1,4 +1,4 @@
-import { PrismaClient, Role, Sex, AppointmentStatus, Priority } from '@prisma/client';
+import { PrismaClient, Role, Sex, AppointmentStatus, Priority, MedicalLicenseLevel, PhilHealthAccreditation } from '@prisma/client';
 import { hash } from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -16,8 +16,37 @@ async function main() {
   await prisma.doctorInfo.deleteMany();
   await prisma.doctorCategory.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.organization.deleteMany();
 
   console.log('🧹 Cleared existing data');
+
+  // Create Organizations
+  const organizations = await Promise.all([
+    prisma.organization.create({
+      data: {
+        name: 'Quanby Healthcare Center',
+        description: 'Primary healthcare facility providing comprehensive medical services',
+        address: '123 Healthcare Blvd, Medical City, MC 12345',
+        phone: '+1-555-HEALTH',
+        email: 'info@quanbyhealthcare.com',
+        website: 'https://quanbyhealthcare.com',
+        isActive: true,
+      },
+    }),
+    prisma.organization.create({
+      data: {
+        name: 'Metro General Hospital',
+        description: 'Large general hospital with specialized departments',
+        address: '456 Hospital Ave, Metro City, MC 67890',
+        phone: '+1-555-HOSPITAL',
+        email: 'contact@metrogeneral.com',
+        website: 'https://metrogeneral.com',
+        isActive: true,
+      },
+    }),
+  ]);
+
+  console.log('🏢 Created organizations');
 
   // Create Doctor Categories
   const categories = await Promise.all([
@@ -55,38 +84,82 @@ async function main() {
 
   console.log('🏥 Created doctor categories');
 
-  // Create Admin User
-  const adminPassword = await hash('admin123', 10);
-  const admin = await prisma.user.create({
+  // Create Super Admin User
+  const superAdminPassword = await hash('superadmin123', 10);
+  const superAdmin = await prisma.user.create({
     data: {
-      email: 'admin@qhealth.com',
-      password: adminPassword,
-      role: Role.ADMIN,
+      email: 'superadmin@qhealth.com',
+      password: superAdminPassword,
+      role: Role.SUPER_ADMIN,
+      // Super admin doesn't belong to any organization
     },
   });
 
-  console.log('👨‍💼 Created admin user');
+  console.log('👑 Created super admin user');
+
+  // Create Admin Users for each organization
+  const adminPassword = await hash('admin123', 10);
+  const admins = await Promise.all([
+    prisma.user.create({
+      data: {
+        email: 'admin@quanbyhealthcare.com',
+        password: adminPassword,
+        role: Role.ADMIN,
+        organizationId: organizations[0].id, // Quanby Healthcare Center
+      },
+    }),
+    prisma.user.create({
+      data: {
+        email: 'admin@metrogeneral.com',
+        password: adminPassword,
+        role: Role.ADMIN,
+        organizationId: organizations[1].id, // Metro General Hospital
+      },
+    }),
+  ]);
+
+  console.log('👨‍💼 Created admin users');
 
   // Create Doctors
   const doctorPassword = await hash('doctor123', 10);
   const doctors = await Promise.all([
     prisma.user.create({
       data: {
-        email: 'dr.smith@qhealth.com',
+        email: 'dr.smith@quanbyhealthcare.com',
         password: doctorPassword,
         role: Role.DOCTOR,
+        organizationId: organizations[0].id, // Quanby Healthcare Center
         doctorInfo: {
           create: {
             firstName: 'John',
+            middleName: 'Alexander',
             lastName: 'Smith',
             gender: Sex.MALE,
             dateOfBirth: new Date('1980-05-15'),
-            contactNumber: '+1-555-0101',
-            address: '123 Medical Center Dr, Healthcare City, HC 12345',
-            bio: 'Experienced cardiologist with over 15 years of practice. Specializes in interventional cardiology and preventive care.',
+            contactNumber: '+63-917-123-4567',
+            address: '123 Medical Center Dr, BGC, Taguig City, Metro Manila 1634',
+            bio: 'Experienced cardiologist with over 15 years of practice. Specializes in interventional cardiology, preventive care, and complex cardiac procedures. Graduated from UP College of Medicine and completed fellowship in Interventional Cardiology at Johns Hopkins Hospital.',
             specialization: 'Interventional Cardiology',
-            qualifications: 'MD, FACC, FSCAI',
+            qualifications: 'MD, FACC, FSCAI, Diplomate of Internal Medicine, Fellow in Interventional Cardiology',
             experience: 15,
+            // Medical License Information
+            prcId: 'PRC-1234567',
+            ptrId: 'PTR-2024-001234',
+            medicalLicenseLevel: MedicalLicenseLevel.S3, // Subspecialist
+            philHealthAccreditation: PhilHealthAccreditation.ACCREDITED,
+            licenseNumber: 'MD-2024-001234',
+            licenseExpiry: new Date('2025-12-31'),
+            isLicenseActive: true,
+            licenseIssuedBy: 'Professional Regulation Commission',
+            licenseIssuedDate: new Date('2009-06-15'),
+            renewalRequired: true,
+            additionalCertifications: JSON.stringify([
+              'Board Certified in Internal Medicine',
+              'Fellow of the American College of Cardiology',
+              'Fellow of the Society for Cardiovascular Angiography and Interventions',
+              'Certified in Advanced Cardiac Life Support',
+              'Certified in Basic Life Support'
+            ]),
           },
         },
         doctorCategories: {
@@ -96,21 +169,42 @@ async function main() {
     }),
     prisma.user.create({
       data: {
-        email: 'dr.johnson@qhealth.com',
+        email: 'dr.johnson@quanbyhealthcare.com',
         password: doctorPassword,
         role: Role.DOCTOR,
+        organizationId: organizations[0].id, // Quanby Healthcare Center
         doctorInfo: {
           create: {
             firstName: 'Sarah',
+            middleName: 'Marie',
             lastName: 'Johnson',
             gender: Sex.FEMALE,
             dateOfBirth: new Date('1985-08-22'),
-            contactNumber: '+1-555-0102',
-            address: '456 Dermatology Ave, Skin City, SC 67890',
-            bio: 'Board-certified dermatologist specializing in cosmetic dermatology and skin cancer prevention.',
-            specialization: 'Cosmetic Dermatology',
-            qualifications: 'MD, FAAD',
+            contactNumber: '+63-917-234-5678',
+            address: '456 Dermatology Ave, Makati City, Metro Manila 1200',
+            bio: 'Board-certified dermatologist specializing in cosmetic dermatology, skin cancer prevention, and advanced laser treatments. Graduated from UST Faculty of Medicine and completed dermatology residency at St. Luke\'s Medical Center.',
+            specialization: 'Cosmetic Dermatology & Dermatopathology',
+            qualifications: 'MD, FAAD, Diplomate of Dermatology, Fellow in Cosmetic Dermatology',
             experience: 12,
+            // Medical License Information
+            prcId: 'PRC-2345678',
+            ptrId: 'PTR-2024-002345',
+            medicalLicenseLevel: MedicalLicenseLevel.S2, // Specialist
+            philHealthAccreditation: PhilHealthAccreditation.ACCREDITED,
+            licenseNumber: 'MD-2024-002345',
+            licenseExpiry: new Date('2025-08-31'),
+            isLicenseActive: true,
+            licenseIssuedBy: 'Professional Regulation Commission',
+            licenseIssuedDate: new Date('2012-08-22'),
+            renewalRequired: true,
+            additionalCertifications: JSON.stringify([
+              'Board Certified in Dermatology',
+              'Fellow of the American Academy of Dermatology',
+              'Certified in Cosmetic Dermatology',
+              'Certified in Dermatopathology',
+              'Certified in Laser Surgery',
+              'Certified in Botox and Dermal Fillers'
+            ]),
           },
         },
         doctorCategories: {
@@ -120,25 +214,137 @@ async function main() {
     }),
     prisma.user.create({
       data: {
-        email: 'dr.williams@qhealth.com',
+        email: 'dr.williams@metrogeneral.com',
         password: doctorPassword,
         role: Role.DOCTOR,
+        organizationId: organizations[1].id, // Metro General Hospital
         doctorInfo: {
           create: {
             firstName: 'Michael',
+            middleName: 'David',
             lastName: 'Williams',
             gender: Sex.MALE,
             dateOfBirth: new Date('1978-12-10'),
-            contactNumber: '+1-555-0103',
-            address: '789 Neurology Blvd, Brain City, BC 11111',
-            bio: 'Neurologist with expertise in stroke treatment and neurological disorders.',
-            specialization: 'Stroke Neurology',
-            qualifications: 'MD, PhD, FAAN',
+            contactNumber: '+63-917-345-6789',
+            address: '789 Neurology Blvd, Quezon City, Metro Manila 1100',
+            bio: 'Neurologist with expertise in stroke treatment, neurological disorders, and neurocritical care. Graduated from Ateneo School of Medicine and completed neurology fellowship at Massachusetts General Hospital.',
+            specialization: 'Stroke Neurology & Neurocritical Care',
+            qualifications: 'MD, PhD, FAAN, Diplomate of Neurology, Fellow in Stroke Neurology',
             experience: 18,
+            // Medical License Information
+            prcId: 'PRC-3456789',
+            ptrId: 'PTR-2024-003456',
+            medicalLicenseLevel: MedicalLicenseLevel.S3, // Subspecialist
+            philHealthAccreditation: PhilHealthAccreditation.ACCREDITED,
+            licenseNumber: 'MD-2024-003456',
+            licenseExpiry: new Date('2025-06-30'),
+            isLicenseActive: true,
+            licenseIssuedBy: 'Professional Regulation Commission',
+            licenseIssuedDate: new Date('2006-12-10'),
+            renewalRequired: true,
+            additionalCertifications: JSON.stringify([
+              'Board Certified in Neurology',
+              'Fellow of the American Academy of Neurology',
+              'Certified in Stroke Neurology',
+              'Certified in Neurocritical Care',
+              'Certified in Electroencephalography',
+              'Certified in Electromyography'
+            ]),
           },
         },
         doctorCategories: {
           connect: [{ id: categories[2].id }], // Neurologist
+        },
+      },
+    }),
+    // Add more doctors for better testing
+    prisma.user.create({
+      data: {
+        email: 'dr.garcia@quanbyhealthcare.com',
+        password: doctorPassword,
+        role: Role.DOCTOR,
+        organizationId: organizations[0].id, // Quanby Healthcare Center
+        doctorInfo: {
+          create: {
+            firstName: 'Maria',
+            middleName: 'Isabella',
+            lastName: 'Garcia',
+            gender: Sex.FEMALE,
+            dateOfBirth: new Date('1982-03-20'),
+            contactNumber: '+63-917-456-7890',
+            address: '321 Orthopedic St, Mandaluyong City, Metro Manila 1550',
+            bio: 'Orthopedic surgeon specializing in sports medicine and joint replacement surgery. Graduated from UERM College of Medicine and completed orthopedic surgery residency at Philippine General Hospital.',
+            specialization: 'Sports Medicine & Joint Replacement Surgery',
+            qualifications: 'MD, Diplomate of Orthopedic Surgery, Fellow in Sports Medicine',
+            experience: 14,
+            // Medical License Information
+            prcId: 'PRC-4567890',
+            ptrId: 'PTR-2024-004567',
+            medicalLicenseLevel: MedicalLicenseLevel.S2, // Specialist
+            philHealthAccreditation: PhilHealthAccreditation.ACCREDITED,
+            licenseNumber: 'MD-2024-004567',
+            licenseExpiry: new Date('2025-03-31'),
+            isLicenseActive: true,
+            licenseIssuedBy: 'Professional Regulation Commission',
+            licenseIssuedDate: new Date('2010-03-20'),
+            renewalRequired: true,
+            additionalCertifications: JSON.stringify([
+              'Board Certified in Orthopedic Surgery',
+              'Fellow in Sports Medicine',
+              'Certified in Arthroscopic Surgery',
+              'Certified in Joint Replacement Surgery',
+              'Certified in Sports Medicine',
+              'Team Physician for Philippine National Team'
+            ]),
+          },
+        },
+        doctorCategories: {
+          connect: [{ id: categories[3].id }], // Orthopedist
+        },
+      },
+    }),
+    prisma.user.create({
+      data: {
+        email: 'dr.rodriguez@metrogeneral.com',
+        password: doctorPassword,
+        role: Role.DOCTOR,
+        organizationId: organizations[1].id, // Metro General Hospital
+        doctorInfo: {
+          create: {
+            firstName: 'Carlos',
+            middleName: 'Miguel',
+            lastName: 'Rodriguez',
+            gender: Sex.MALE,
+            dateOfBirth: new Date('1987-11-05'),
+            contactNumber: '+63-917-567-8901',
+            address: '654 Pediatrics Ave, Pasig City, Metro Manila 1600',
+            bio: 'Pediatrician with specialization in pediatric cardiology and neonatology. Graduated from De La Salle University Medical Center and completed pediatric residency at Children\'s Hospital of Philadelphia.',
+            specialization: 'Pediatric Cardiology & Neonatology',
+            qualifications: 'MD, Diplomate of Pediatrics, Fellow in Pediatric Cardiology',
+            experience: 10,
+            // Medical License Information
+            prcId: 'PRC-5678901',
+            ptrId: 'PTR-2024-005678',
+            medicalLicenseLevel: MedicalLicenseLevel.S2, // Specialist
+            philHealthAccreditation: PhilHealthAccreditation.ACCREDITED,
+            licenseNumber: 'MD-2024-005678',
+            licenseExpiry: new Date('2025-11-30'),
+            isLicenseActive: true,
+            licenseIssuedBy: 'Professional Regulation Commission',
+            licenseIssuedDate: new Date('2014-11-05'),
+            renewalRequired: true,
+            additionalCertifications: JSON.stringify([
+              'Board Certified in Pediatrics',
+              'Fellow in Pediatric Cardiology',
+              'Certified in Neonatology',
+              'Certified in Pediatric Advanced Life Support',
+              'Certified in Neonatal Resuscitation Program',
+              'Certified in Pediatric Echocardiography'
+            ]),
+          },
+        },
+        doctorCategories: {
+          connect: [{ id: categories[4].id }], // Pediatrician
         },
       },
     }),
@@ -154,6 +360,7 @@ async function main() {
         email: 'patient.anderson@email.com',
         password: patientPassword,
         role: Role.PATIENT,
+        // Patients don't belong to any organization
         patientInfo: {
           create: {
             fullName: 'Emily Anderson',
@@ -167,6 +374,15 @@ async function main() {
             medicalHistory: 'No significant medical history',
             allergies: 'Penicillin',
             medications: 'None',
+            // PhilHealth Information
+            philHealthId: '12-345678901-2',
+            philHealthStatus: 'ACTIVE',
+            philHealthCategory: 'INDIVIDUAL',
+            philHealthExpiry: new Date('2025-12-31'),
+            philHealthMemberSince: new Date('2020-01-15'),
+            philHealthIdVerified: true,
+            philHealthIdVerifiedBy: admins[0].id,
+            philHealthIdVerifiedAt: new Date('2024-01-01'),
           },
         },
       },
@@ -176,6 +392,7 @@ async function main() {
         email: 'patient.brown@email.com',
         password: patientPassword,
         role: Role.PATIENT,
+        // Patients don't belong to any organization
         patientInfo: {
           create: {
             fullName: 'David Brown',
@@ -189,6 +406,15 @@ async function main() {
             medicalHistory: 'Hypertension, Type 2 Diabetes',
             allergies: 'None',
             medications: 'Metformin, Lisinopril',
+            // PhilHealth Information
+            philHealthId: '23-456789012-3',
+            philHealthStatus: 'ACTIVE',
+            philHealthCategory: 'FAMILY',
+            philHealthExpiry: new Date('2025-06-30'),
+            philHealthMemberSince: new Date('2018-03-10'),
+            philHealthIdVerified: true,
+            philHealthIdVerifiedBy: admins[0].id,
+            philHealthIdVerifiedAt: new Date('2024-01-01'),
           },
         },
       },
@@ -198,6 +424,7 @@ async function main() {
         email: 'patient.garcia@email.com',
         password: patientPassword,
         role: Role.PATIENT,
+        // Patients don't belong to any organization
         patientInfo: {
           create: {
             fullName: 'Maria Garcia',
@@ -211,6 +438,15 @@ async function main() {
             medicalHistory: 'Asthma',
             allergies: 'Dust, Pollen',
             medications: 'Albuterol inhaler',
+            // PhilHealth Information
+            philHealthId: '34-567890123-4',
+            philHealthStatus: 'ACTIVE',
+            philHealthCategory: 'SPONSORED',
+            philHealthExpiry: new Date('2025-09-15'),
+            philHealthMemberSince: new Date('2021-07-20'),
+            philHealthIdVerified: true,
+            philHealthIdVerifiedBy: admins[0].id,
+            philHealthIdVerifiedAt: new Date('2024-01-01'),
           },
         },
       },
@@ -476,7 +712,9 @@ async function main() {
 
   console.log('✅ Database seeding completed successfully!');
   console.log('\n📊 Summary of created data:');
-  console.log(`   - Admin users: 1`);
+  console.log(`   - Organizations: ${organizations.length}`);
+  console.log(`   - Super admin users: 1`);
+  console.log(`   - Admin users: ${admins.length}`);
   console.log(`   - Doctor categories: ${categories.length}`);
   console.log(`   - Doctors: ${doctors.length}`);
   console.log(`   - Patients: ${patients.length}`);
@@ -485,6 +723,18 @@ async function main() {
   console.log(`   - Doctor schedules: ${scheduleData.length}`);
   console.log(`   - Consultations: ${consultations.length}`);
   console.log(`   - Health scans: 2`);
+  console.log('\n🔐 Login Credentials:');
+  console.log(`   - Super Admin: superadmin@qhealth.com / superadmin123`);
+  console.log(`   - Admin (Quanby): admin@quanbyhealthcare.com / admin123`);
+  console.log(`   - Admin (Metro): admin@metrogeneral.com / admin123`);
+  console.log(`   - Doctors: dr.smith@quanbyhealthcare.com, dr.johnson@quanbyhealthcare.com, dr.williams@metrogeneral.com, dr.garcia@quanbyhealthcare.com, dr.rodriguez@metrogeneral.com / doctor123`);
+  console.log(`   - Patients: patient.anderson@email.com, patient.brown@email.com, patient.garcia@email.com / patient123`);
+  console.log('\n📋 Doctor Specializations:');
+  console.log(`   - Dr. John Smith: Interventional Cardiology (S3 - Subspecialist)`);
+  console.log(`   - Dr. Sarah Johnson: Cosmetic Dermatology (S2 - Specialist)`);
+  console.log(`   - Dr. Michael Williams: Stroke Neurology (S3 - Subspecialist)`);
+  console.log(`   - Dr. Maria Garcia: Sports Medicine & Orthopedics (S2 - Specialist)`);
+  console.log(`   - Dr. Carlos Rodriguez: Pediatric Cardiology (S2 - Specialist)`);
 }
 
 main()

@@ -290,7 +290,7 @@ export class SelfCheckController {
       // Get self-check consultation
       const selfCheckResult = await prisma.consultation.findFirst({
         where: {
-          id: Number(consultationId),
+          id: consultationId,
           doctorId: userId,
           patientId: userId,
           notes: {
@@ -350,7 +350,7 @@ export class SelfCheckController {
       // Get self-check consultation
       const selfCheckResult = await prisma.consultation.findFirst({
         where: {
-          id: Number(consultationId),
+          id: consultationId,
           doctorId: userId,
           patientId: userId,
           notes: {
@@ -369,7 +369,7 @@ export class SelfCheckController {
       // Delete related records (cascade will handle health scan and medical history)
       await prisma.consultation.delete({
         where: {
-          id: Number(consultationId)
+          id: consultationId
         }
       });
 
