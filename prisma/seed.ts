@@ -631,7 +631,8 @@ async function main() {
   console.log('💬 Created consultations');
 
   // Create Health Scans
-  await Promise.all([
+  const healthScans = await Promise.all([
+    // Healthy young adult (Emily Anderson)
     prisma.healthScan.create({
       data: {
         consultationId: consultations[0].id,
@@ -669,6 +670,7 @@ async function main() {
         historyFamilyDiabetes: 0,
       },
     }),
+    // Middle-aged with diabetes and hypertension (David Brown)
     prisma.healthScan.create({
       data: {
         consultationId: consultations[1].id,
@@ -706,6 +708,287 @@ async function main() {
         historyFamilyDiabetes: 1,
       },
     }),
+    // Young adult with asthma (Maria Garcia)
+    prisma.healthScan.create({
+      data: {
+        consultationId: consultations[2].id,
+        bloodPressure: '110/70',
+        heartRate: 68.0,
+        spO2: 97.0,
+        respiratoryRate: 16.0,
+        stressLevel: 1.8,
+        stressScore: 198.4,
+        hrvSdnn: 52.3,
+        hrvRmsdd: 48.7,
+        generalWellness: 82.1,
+        generalRisk: 2.1,
+        coronaryHeartDisease: 0.9,
+        congestiveHeartFailure: 0.1,
+        intermittentClaudication: 0.3,
+        strokeRisk: 0.8,
+        covidRisk: 1.5,
+        height: 160.0,
+        weight: 58.0,
+        smoker: false,
+        hypertension: false,
+        bpMedication: false,
+        diabetic: 0,
+        waistCircumference: 68.0,
+        heartDisease: false,
+        depression: false,
+        totalCholesterol: 165.0,
+        hdl: 58.0,
+        parentalHypertension: 0,
+        physicalActivity: true,
+        healthyDiet: true,
+        antiHypertensive: false,
+        historyBloodGlucose: false,
+        historyFamilyDiabetes: 0,
+      },
+    }),
+  ]);
+
+  // Create additional consultations for more health scans
+  const additionalConsultations = await Promise.all([
+    prisma.consultation.create({
+      data: {
+        doctorId: doctors[3].id, // Dr. Maria Garcia (Orthopedist)
+        patientId: patients[0].id, // Emily Anderson
+        startTime: new Date('2024-01-20T10:00:00Z'),
+        endTime: new Date('2024-01-20T10:30:00Z'),
+        consultationCode: 'QH2004JKL',
+      },
+    }),
+    prisma.consultation.create({
+      data: {
+        doctorId: doctors[4].id, // Dr. Carlos Rodriguez (Pediatrician)
+        patientId: patients[1].id, // David Brown
+        startTime: new Date('2024-01-22T14:00:00Z'),
+        endTime: new Date('2024-01-22T14:45:00Z'),
+        consultationCode: 'QH2205MNO',
+      },
+    }),
+    prisma.consultation.create({
+      data: {
+        doctorId: doctors[0].id, // Dr. John Smith (Cardiologist)
+        patientId: patients[2].id, // Maria Garcia
+        startTime: new Date('2024-01-25T09:00:00Z'),
+        endTime: new Date('2024-01-25T09:30:00Z'),
+        consultationCode: 'QH2506PQR',
+      },
+    }),
+    prisma.consultation.create({
+      data: {
+        doctorId: doctors[1].id, // Dr. Sarah Johnson (Dermatologist)
+        patientId: patients[0].id, // Emily Anderson
+        startTime: new Date('2024-01-28T11:00:00Z'),
+        endTime: new Date('2024-01-28T11:30:00Z'),
+        consultationCode: 'QH2807STU',
+      },
+    }),
+    prisma.consultation.create({
+      data: {
+        doctorId: doctors[2].id, // Dr. Michael Williams (Neurologist)
+        patientId: patients[1].id, // David Brown
+        startTime: new Date('2024-01-30T15:00:00Z'),
+        endTime: new Date('2024-01-30T15:45:00Z'),
+        consultationCode: 'QH3008VWX',
+      },
+    }),
+  ]);
+
+  // Create additional health scans with varied health profiles
+  const additionalHealthScans = await Promise.all([
+    // High-risk patient with multiple conditions
+    prisma.healthScan.create({
+      data: {
+        consultationId: additionalConsultations[0].id,
+        bloodPressure: '150/95',
+        heartRate: 85.0,
+        spO2: 94.0,
+        respiratoryRate: 18.0,
+        stressLevel: 4.2,
+        stressScore: 385.7,
+        hrvSdnn: 32.1,
+        hrvRmsdd: 29.8,
+        generalWellness: 45.8,
+        generalRisk: 12.3,
+        coronaryHeartDisease: 8.7,
+        congestiveHeartFailure: 2.1,
+        intermittentClaudication: 3.4,
+        strokeRisk: 5.6,
+        covidRisk: 4.8,
+        height: 175.0,
+        weight: 95.0,
+        smoker: true,
+        hypertension: true,
+        bpMedication: true,
+        diabetic: 2,
+        waistCircumference: 102.0,
+        heartDisease: true,
+        depression: true,
+        totalCholesterol: 280.0,
+        hdl: 35.0,
+        parentalHypertension: 2,
+        physicalActivity: false,
+        healthyDiet: false,
+        antiHypertensive: true,
+        historyBloodGlucose: true,
+        historyFamilyDiabetes: 2,
+      },
+    }),
+    // Elderly patient with age-related conditions
+    prisma.healthScan.create({
+      data: {
+        consultationId: additionalConsultations[1].id,
+        bloodPressure: '140/90',
+        heartRate: 82.0,
+        spO2: 95.0,
+        respiratoryRate: 15.0,
+        stressLevel: 3.8,
+        stressScore: 345.2,
+        hrvSdnn: 28.9,
+        hrvRmsdd: 26.4,
+        generalWellness: 58.7,
+        generalRisk: 9.2,
+        coronaryHeartDisease: 6.3,
+        congestiveHeartFailure: 1.8,
+        intermittentClaudication: 2.7,
+        strokeRisk: 4.1,
+        covidRisk: 3.9,
+        height: 170.0,
+        weight: 85.0,
+        smoker: false,
+        hypertension: true,
+        bpMedication: true,
+        diabetic: 1,
+        waistCircumference: 92.0,
+        heartDisease: false,
+        depression: false,
+        totalCholesterol: 240.0,
+        hdl: 42.0,
+        parentalHypertension: 1,
+        physicalActivity: true,
+        healthyDiet: true,
+        antiHypertensive: true,
+        historyBloodGlucose: true,
+        historyFamilyDiabetes: 1,
+      },
+    }),
+    // Athlete with excellent health metrics
+    prisma.healthScan.create({
+      data: {
+        consultationId: additionalConsultations[2].id,
+        bloodPressure: '105/65',
+        heartRate: 58.0,
+        spO2: 99.0,
+        respiratoryRate: 10.0,
+        stressLevel: 1.2,
+        stressScore: 156.3,
+        hrvSdnn: 68.4,
+        hrvRmsdd: 62.1,
+        generalWellness: 92.8,
+        generalRisk: 0.8,
+        coronaryHeartDisease: 0.3,
+        congestiveHeartFailure: 0.05,
+        intermittentClaudication: 0.1,
+        strokeRisk: 0.4,
+        covidRisk: 0.9,
+        height: 168.0,
+        weight: 62.0,
+        smoker: false,
+        hypertension: false,
+        bpMedication: false,
+        diabetic: 0,
+        waistCircumference: 70.0,
+        heartDisease: false,
+        depression: false,
+        totalCholesterol: 155.0,
+        hdl: 65.0,
+        parentalHypertension: 0,
+        physicalActivity: true,
+        healthyDiet: true,
+        antiHypertensive: false,
+        historyBloodGlucose: false,
+        historyFamilyDiabetes: 0,
+      },
+    }),
+    // Patient with mental health concerns
+    prisma.healthScan.create({
+      data: {
+        consultationId: additionalConsultations[3].id,
+        bloodPressure: '125/80',
+        heartRate: 88.0,
+        spO2: 96.5,
+        respiratoryRate: 17.0,
+        stressLevel: 5.1,
+        stressScore: 425.8,
+        hrvSdnn: 25.6,
+        hrvRmsdd: 22.3,
+        generalWellness: 42.3,
+        generalRisk: 7.6,
+        coronaryHeartDisease: 3.8,
+        congestiveHeartFailure: 0.9,
+        intermittentClaudication: 1.5,
+        strokeRisk: 2.9,
+        covidRisk: 3.2,
+        height: 162.0,
+        weight: 70.0,
+        smoker: true,
+        hypertension: false,
+        bpMedication: false,
+        diabetic: 0,
+        waistCircumference: 78.0,
+        heartDisease: false,
+        depression: true,
+        totalCholesterol: 195.0,
+        hdl: 48.0,
+        parentalHypertension: 0,
+        physicalActivity: false,
+        healthyDiet: false,
+        antiHypertensive: false,
+        historyBloodGlucose: false,
+        historyFamilyDiabetes: 0,
+      },
+    }),
+    // Patient with metabolic syndrome
+    prisma.healthScan.create({
+      data: {
+        consultationId: additionalConsultations[4].id,
+        bloodPressure: '145/92',
+        heartRate: 90.0,
+        spO2: 93.0,
+        respiratoryRate: 19.0,
+        stressLevel: 4.7,
+        stressScore: 398.2,
+        hrvSdnn: 29.8,
+        hrvRmsdd: 27.1,
+        generalWellness: 38.9,
+        generalRisk: 14.7,
+        coronaryHeartDisease: 11.2,
+        congestiveHeartFailure: 3.4,
+        intermittentClaudication: 4.8,
+        strokeRisk: 7.3,
+        covidRisk: 5.6,
+        height: 178.0,
+        weight: 110.0,
+        smoker: false,
+        hypertension: true,
+        bpMedication: true,
+        diabetic: 2,
+        waistCircumference: 108.0,
+        heartDisease: false,
+        depression: false,
+        totalCholesterol: 320.0,
+        hdl: 28.0,
+        parentalHypertension: 2,
+        physicalActivity: false,
+        healthyDiet: false,
+        antiHypertensive: true,
+        historyBloodGlucose: true,
+        historyFamilyDiabetes: 2,
+      },
+    }),
   ]);
 
   console.log('🔬 Created health scans');
@@ -721,8 +1004,8 @@ async function main() {
   console.log(`   - Emergency contacts: 3`);
   console.log(`   - Insurance info: 3`);
   console.log(`   - Doctor schedules: ${scheduleData.length}`);
-  console.log(`   - Consultations: ${consultations.length}`);
-  console.log(`   - Health scans: 2`);
+  console.log(`   - Consultations: ${consultations.length + additionalConsultations.length}`);
+  console.log(`   - Health scans: ${healthScans.length + additionalHealthScans.length}`);
   console.log('\n🔐 Login Credentials:');
   console.log(`   - Super Admin: superadmin@qhealth.com / superadmin123`);
   console.log(`   - Admin (Quanby): admin@quanbyhealthcare.com / admin123`);

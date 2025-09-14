@@ -15,3 +15,4 @@ router.get('/:organizationId/doctors', organizationsController.getDoctorsByOrgan
 
 export { router as organizationsRoutes };
 
+
