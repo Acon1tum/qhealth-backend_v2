@@ -789,6 +789,7 @@ class AppointmentsController {
                     select: {
                         id: true,
                         email: true,
+                        organizationId: true,
                         doctorInfo: {
                             select: {
                                 firstName: true,
@@ -809,7 +810,8 @@ class AppointmentsController {
                         name: doctor.doctorInfo
                             ? `Dr. ${doctor.doctorInfo.firstName} ${doctor.doctorInfo.lastName}`
                             : doctor.email,
-                        specialization: ((_a = doctor.doctorInfo) === null || _a === void 0 ? void 0 : _a.specialization) || 'General Practice'
+                        specialization: ((_a = doctor.doctorInfo) === null || _a === void 0 ? void 0 : _a.specialization) || 'General Practice',
+                        organizationId: doctor.organizationId
                     });
                 });
                 res.json({

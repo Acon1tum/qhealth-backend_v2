@@ -912,6 +912,7 @@ export class AppointmentsController {
         select: {
           id: true,
           email: true,
+          organizationId: true,
           doctorInfo: {
             select: {
               firstName: true,
@@ -931,7 +932,8 @@ export class AppointmentsController {
         name: doctor.doctorInfo 
           ? `Dr. ${doctor.doctorInfo.firstName} ${doctor.doctorInfo.lastName}`
           : doctor.email,
-        specialization: doctor.doctorInfo?.specialization || 'General Practice'
+        specialization: doctor.doctorInfo?.specialization || 'General Practice',
+        organizationId: doctor.organizationId
       }));
 
       res.json({
