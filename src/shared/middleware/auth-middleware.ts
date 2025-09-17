@@ -134,7 +134,7 @@ export const requireRole = (allowedRoles: Role[]) => {
 /**
  * Require admin role
  */
-export const requireAdmin = requireRole([Role.ADMIN]);
+export const requireAdmin = requireRole([Role.SUPER_ADMIN, Role.ADMIN]);
 
 /**
  * Require doctor role
@@ -149,17 +149,17 @@ export const requirePatient = requireRole([Role.PATIENT]);
 /**
  * Require doctor or admin role
  */
-export const requireDoctorOrAdmin = requireRole([Role.DOCTOR, Role.ADMIN]);
+export const requireDoctorOrAdmin = requireRole([Role.SUPER_ADMIN, Role.DOCTOR, Role.ADMIN]);
 
 /**
  * Require patient or admin role
  */
-export const requirePatientOrAdmin = requireRole([Role.PATIENT, Role.ADMIN]);
+export const requirePatientOrAdmin = requireRole([Role.SUPER_ADMIN, Role.PATIENT, Role.ADMIN]);
 
 /**
  * Require any authenticated user
  */
-export const requireAuth = requireRole([Role.ADMIN, Role.DOCTOR, Role.PATIENT]);
+export const requireAuth = requireRole([Role.SUPER_ADMIN, Role.ADMIN, Role.DOCTOR, Role.PATIENT]);
 
 /**
  * Optional authentication middleware (doesn't fail if no token)
@@ -213,8 +213,8 @@ export const requireOwnershipOrAdmin = (resourceUserIdField: string = 'userId') 
       return;
     }
 
-    // Admin can access any resource
-    if (req.user.role === Role.ADMIN) {
+    // Admin and Super Admin can access any resource
+    if (req.user.role === Role.ADMIN || req.user.role === Role.SUPER_ADMIN) {
       next();
       return;
     }
@@ -272,8 +272,8 @@ export const requirePatientAccess = (req: Request, res: Response, next: NextFunc
     return;
   }
 
-  // Admin can access any patient data
-  if (req.user.role === Role.ADMIN) {
+  // Admin and Super Admin can access any patient data
+  if (req.user.role === Role.ADMIN || req.user.role === Role.SUPER_ADMIN) {
     next();
     return;
   }

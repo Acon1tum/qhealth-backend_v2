@@ -24,6 +24,7 @@ import { prescriptionsRoutes } from './modules/prescriptions/prescriptions.route
 import { diagnosesRoutes } from './modules/diagnoses/diagnoses.routes';
 import { selfCheckRoutes } from './modules/self-check/self-check.routes';
 import { organizationsRoutes } from './modules/organizations/organizations.routes';
+import { doctorsRoutes } from './modules/doctors/doctors.routes';
 
 // Import middleware
 import { errorHandler, notFoundHandler } from './shared/middleware/error-handler';
@@ -184,6 +185,7 @@ app.use('/api/prescriptions', prescriptionsRoutes);
 app.use('/api/diagnoses', diagnosesRoutes);
 app.use('/api/self-check', selfCheckRoutes);
 app.use('/api/organizations', organizationsRoutes);  
+app.use('/api/doctors', doctorsRoutes);
 
 // Serve static files with enhanced security
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {

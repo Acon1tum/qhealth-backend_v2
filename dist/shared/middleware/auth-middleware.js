@@ -126,7 +126,7 @@ exports.requireRole = requireRole;
 /**
  * Require admin role
  */
-exports.requireAdmin = (0, exports.requireRole)([types_1.Role.ADMIN]);
+exports.requireAdmin = (0, exports.requireRole)([types_1.Role.SUPER_ADMIN, types_1.Role.ADMIN]);
 /**
  * Require doctor role
  */
@@ -138,15 +138,15 @@ exports.requirePatient = (0, exports.requireRole)([types_1.Role.PATIENT]);
 /**
  * Require doctor or admin role
  */
-exports.requireDoctorOrAdmin = (0, exports.requireRole)([types_1.Role.DOCTOR, types_1.Role.ADMIN]);
+exports.requireDoctorOrAdmin = (0, exports.requireRole)([types_1.Role.SUPER_ADMIN, types_1.Role.DOCTOR, types_1.Role.ADMIN]);
 /**
  * Require patient or admin role
  */
-exports.requirePatientOrAdmin = (0, exports.requireRole)([types_1.Role.PATIENT, types_1.Role.ADMIN]);
+exports.requirePatientOrAdmin = (0, exports.requireRole)([types_1.Role.SUPER_ADMIN, types_1.Role.PATIENT, types_1.Role.ADMIN]);
 /**
  * Require any authenticated user
  */
-exports.requireAuth = (0, exports.requireRole)([types_1.Role.ADMIN, types_1.Role.DOCTOR, types_1.Role.PATIENT]);
+exports.requireAuth = (0, exports.requireRole)([types_1.Role.SUPER_ADMIN, types_1.Role.ADMIN, types_1.Role.DOCTOR, types_1.Role.PATIENT]);
 /**
  * Optional authentication middleware (doesn't fail if no token)
  */
@@ -191,8 +191,8 @@ const requireOwnershipOrAdmin = (resourceUserIdField = 'userId') => {
             res.status(401).json(response);
             return;
         }
-        // Admin can access any resource
-        if (req.user.role === types_1.Role.ADMIN) {
+        // Admin and Super Admin can access any resource
+        if (req.user.role === types_1.Role.ADMIN || req.user.role === types_1.Role.SUPER_ADMIN) {
             next();
             return;
         }
@@ -243,8 +243,8 @@ const requirePatientAccess = (req, res, next) => {
         res.status(400).json(response);
         return;
     }
-    // Admin can access any patient data
-    if (req.user.role === types_1.Role.ADMIN) {
+    // Admin and Super Admin can access any patient data
+    if (req.user.role === types_1.Role.ADMIN || req.user.role === types_1.Role.SUPER_ADMIN) {
         next();
         return;
     }
