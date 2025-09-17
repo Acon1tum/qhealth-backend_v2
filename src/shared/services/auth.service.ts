@@ -353,6 +353,16 @@ export class AuthService {
       throw new AppError('User not found', 404, ErrorTypes.NOT_FOUND_ERROR);
     }
 
+    // Update profile picture in User table (for all users)
+    if (updateData.profilePicture !== undefined) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          profilePicture: updateData.profilePicture,
+        },
+      });
+    }
+
     // Update role-specific information
     if (user.role === Role.DOCTOR && user.doctorInfo) {
       await prisma.doctorInfo.update({

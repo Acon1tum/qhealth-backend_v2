@@ -269,6 +269,8 @@ export interface IUpdateProfileRequest {
   medicalHistory?: string;
   allergies?: string;
   medications?: string;
+  // Profile Picture (for all users)
+  profilePicture?: string;
   // Medical License Information (for doctor)
   prcId?: string;
   ptrId?: string;

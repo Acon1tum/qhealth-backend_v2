@@ -291,6 +291,15 @@ class AuthService {
             if (!user) {
                 throw new error_handler_1.AppError('User not found', 404, error_handler_1.ErrorTypes.NOT_FOUND_ERROR);
             }
+            // Update profile picture in User table (for all users)
+            if (updateData.profilePicture !== undefined) {
+                yield prisma.user.update({
+                    where: { id: userId },
+                    data: {
+                        profilePicture: updateData.profilePicture,
+                    },
+                });
+            }
             // Update role-specific information
             if (user.role === client_1.Role.DOCTOR && user.doctorInfo) {
                 yield prisma.doctorInfo.update({
