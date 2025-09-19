@@ -24,6 +24,7 @@ model Organization {
 
   // Relationships
   users       User[]   // Users belonging to this organization
+  labRequests LabRequest[] // Lab requests for this organization
 }
 
 // User model for login (Doctors, Patients, Admins, Super Admins)
@@ -81,6 +82,12 @@ model User {
   prescriptionsAsPatient Prescription[] @relation("PatientPrescriptions") // Prescriptions for this patient
   diagnosesAsDoctor      Diagnosis[] @relation("DoctorDiagnoses") // Diagnoses made by this doctor
   diagnosesAsPatient      Diagnosis[] @relation("PatientDiagnoses") // Diagnoses for this patient
+  
+  // Lab request relations
+  labRequestsAsPatient   LabRequest[] @relation("PatientLabRequests") // Lab requests for this patient
+  labRequestsAsDoctor    LabRequest[] @relation("DoctorLabRequests") // Lab requests made by this doctor
+  createdLabRequests     LabRequest[] @relation("CreatedLabRequests") // Lab requests created by this user
+  updatedLabRequests     LabRequest[] @relation("UpdatedLabRequests") // Lab requests updated by this user
   
   @@index([profilePictureVerified])
   @@index([profilePictureVerifiedBy])
@@ -722,4 +729,45 @@ enum DiagnosisStatus {
   CHRONIC    // Chronic condition (ongoing)
   SUSPECTED  // Suspected but not confirmed
   RULED_OUT  // Condition was suspected but ruled out
+}
+
+// Lab Request model for managing laboratory test requests
+model LabRequest {
+  id             String   @id @default(uuid()) // Primary key, UUID
+  patientId      String   // Reference to the patient
+  organizationId String   // Reference to the organization
+  doctorId       String   // Reference to the doctor who requested the lab test
+  note           String?  // Additional notes for the lab request
+  createdBy      String   // User who created the lab request
+  updatedBy      String?  // User who last updated the lab request
+  status         LabRequestStatus @default(PENDING) // Status of the lab request
+  priority       Priority @default(NORMAL) // Priority level of the request
+  requestedTests String?  // JSON string containing requested lab tests
+  instructions   String?  // Special instructions for the lab
+  createdAt      DateTime @default(now()) // When the request was created
+  updatedAt      DateTime @updatedAt // When the request was last updated
+  
+  // Relationships
+  patient      User         @relation("PatientLabRequests", fields: [patientId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  doctor       User         @relation("DoctorLabRequests", fields: [doctorId], references: [id])
+  creator      User         @relation("CreatedLabRequests", fields: [createdBy], references: [id])
+  updater      User?        @relation("UpdatedLabRequests", fields: [updatedBy], references: [id])
+  
+  @@index([patientId])
+  @@index([organizationId])
+  @@index([doctorId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+}
+
+// Lab Request Status enum
+enum LabRequestStatus {
+  PENDING     // Request submitted, waiting for lab processing
+  IN_PROGRESS // Lab is currently processing the request
+  COMPLETED   // Lab tests completed
+  CANCELLED   // Request was cancelled
+  REJECTED    // Request was rejected by lab
+  ON_HOLD     // Request is on hold
 }
