@@ -3,6 +3,7 @@ import { PrismaClient, Role } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { securityConfig } from '../../config/security.config';
 import { AuthService } from '../../shared/services/auth.service';
+import { IUserProfile } from '../../types';
 
 const prisma = new PrismaClient();
 
@@ -24,7 +25,12 @@ export class DoctorsController {
       const { organizationId } = req.query;
 
       const whereUser: any = { role: Role.DOCTOR };
-      if (organizationId) {
+      
+      // If user is admin, filter by their organization
+      if (req.user && req.user.role === Role.ADMIN) {
+        whereUser.organizationId = (req.user as any).organizationId;
+      } else if (organizationId) {
+        // Only allow organizationId filter for super admin or when no user is authenticated
         whereUser.organizationId = organizationId;
       }
 
@@ -87,8 +93,16 @@ export class DoctorsController {
   async getDoctorById(req: Request, res: Response) {
     try {
       const { id } = req.params;
+      
+      const whereClause: any = { id, role: Role.DOCTOR };
+      
+      // If user is admin, filter by their organization
+      if (req.user && req.user.role === Role.ADMIN) {
+        whereClause.organizationId = (req.user as any).organizationId;
+      }
+      
       const doctor = await prisma.user.findFirst({
-        where: { id, role: Role.DOCTOR },
+        where: whereClause,
         select: {
           id: true,
           email: true,
@@ -132,6 +146,12 @@ export class DoctorsController {
         return res.status(400).json({ success: false, message: 'Missing required fields' });
       }
 
+      // If user is admin, they can only create doctors in their organization
+      let finalOrganizationId = organizationId;
+      if (req.user && req.user.role === Role.ADMIN) {
+        finalOrganizationId = (req.user as any).organizationId;
+      }
+
       // Validate password strength consistently with AuthService
       if (!AuthService.validatePasswordStrength(password)) {
         return res.status(400).json({ success: false, message: 'Password does not meet security requirements' });
@@ -151,7 +171,7 @@ export class DoctorsController {
           email: email.toLowerCase(),
           password: passwordHash,
           role: Role.DOCTOR,
-          organizationId: organizationId || null,
+          organizationId: finalOrganizationId || null,
           doctorInfo: {
             create: {
               firstName,
@@ -200,13 +220,28 @@ export class DoctorsController {
         bio,
       } = req.body || {};
 
-      const user = await prisma.user.findFirst({ where: { id, role: Role.DOCTOR }, select: { id: true } });
+      const whereClause: any = { id, role: Role.DOCTOR };
+      
+      // If user is admin, filter by their organization
+      if (req.user && req.user.role === Role.ADMIN) {
+        whereClause.organizationId = (req.user as any).organizationId;
+      }
+
+      const user = await prisma.user.findFirst({ where: whereClause, select: { id: true } });
       if (!user) return res.status(404).json({ success: false, message: 'Doctor not found' });
+
+      // If user is admin, they cannot change the organization
+      const updateData: any = {};
+      if (req.user && req.user.role === Role.ADMIN) {
+        // Admin cannot change organization, so we don't include organizationId in update
+      } else {
+        updateData.organizationId = organizationId ?? undefined;
+      }
 
       const updated = await prisma.user.update({
         where: { id },
         data: {
-          organizationId: organizationId ?? undefined,
+          ...updateData,
           doctorInfo: {
             upsert: {
               create: {
@@ -250,7 +285,15 @@ export class DoctorsController {
   async deleteDoctor(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const user = await prisma.user.findFirst({ where: { id, role: Role.DOCTOR }, select: { id: true } });
+      
+      const whereClause: any = { id, role: Role.DOCTOR };
+      
+      // If user is admin, filter by their organization
+      if (req.user && req.user.role === Role.ADMIN) {
+        whereClause.organizationId = (req.user as any).organizationId;
+      }
+      
+      const user = await prisma.user.findFirst({ where: whereClause, select: { id: true } });
       if (!user) return res.status(404).json({ success: false, message: 'Doctor not found' });
 
       // Clean up related records with safe order

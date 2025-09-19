@@ -58,8 +58,13 @@ export class AuthService {
       id: user.id,
       email: user.email,
       role: user.role,
+      organizationId: user.organizationId,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
+      profilePicture: user.profilePicture,
+      profilePictureVerified: user.profilePictureVerified,
+      profilePictureVerifiedBy: user.profilePictureVerifiedBy,
+      profilePictureVerifiedAt: user.profilePictureVerifiedAt,
       doctorInfo: user.doctorInfo || undefined,
       patientInfo: user.patientInfo || undefined,
     };

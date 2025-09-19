@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { DoctorsController } from './doctors.controller';
-import { authenticateToken, requireAuth } from '../../shared/middleware/auth-middleware';
+import { authenticateToken, requireAuth, requireAdmin } from '../../shared/middleware/auth-middleware';
 
 const router = Router();
 const controller = new DoctorsController();
@@ -9,10 +9,10 @@ const controller = new DoctorsController();
 router.get('/', controller.listDoctors.bind(controller));
 router.get('/:id', controller.getDoctorById.bind(controller));
 
-// Protected write endpoints
-router.post('/', authenticateToken, requireAuth, controller.createDoctor.bind(controller));
-router.put('/:id', authenticateToken, requireAuth, controller.updateDoctor.bind(controller));
-router.delete('/:id', authenticateToken, requireAuth, controller.deleteDoctor.bind(controller));
+// Protected write endpoints - only admins can create, update, delete doctors
+router.post('/', authenticateToken, requireAdmin, controller.createDoctor.bind(controller));
+router.put('/:id', authenticateToken, requireAdmin, controller.updateDoctor.bind(controller));
+router.delete('/:id', authenticateToken, requireAdmin, controller.deleteDoctor.bind(controller));
 
 export { router as doctorsRoutes };
 

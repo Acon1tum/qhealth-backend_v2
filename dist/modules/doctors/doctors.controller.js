@@ -26,7 +26,12 @@ class DoctorsController {
                 const search = (req.query.search || '').trim();
                 const { organizationId } = req.query;
                 const whereUser = { role: client_1.Role.DOCTOR };
-                if (organizationId) {
+                // If user is admin, filter by their organization
+                if (req.user && req.user.role === client_1.Role.ADMIN) {
+                    whereUser.organizationId = req.user.organizationId;
+                }
+                else if (organizationId) {
+                    // Only allow organizationId filter for super admin or when no user is authenticated
                     whereUser.organizationId = organizationId;
                 }
                 if (search) {
@@ -88,8 +93,13 @@ class DoctorsController {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const { id } = req.params;
+                const whereClause = { id, role: client_1.Role.DOCTOR };
+                // If user is admin, filter by their organization
+                if (req.user && req.user.role === client_1.Role.ADMIN) {
+                    whereClause.organizationId = req.user.organizationId;
+                }
                 const doctor = yield prisma.user.findFirst({
-                    where: { id, role: client_1.Role.DOCTOR },
+                    where: whereClause,
                     select: {
                         id: true,
                         email: true,
@@ -118,6 +128,11 @@ class DoctorsController {
                 if (!email || !password || !firstName || !lastName || !specialization || experience === undefined) {
                     return res.status(400).json({ success: false, message: 'Missing required fields' });
                 }
+                // If user is admin, they can only create doctors in their organization
+                let finalOrganizationId = organizationId;
+                if (req.user && req.user.role === client_1.Role.ADMIN) {
+                    finalOrganizationId = req.user.organizationId;
+                }
                 // Validate password strength consistently with AuthService
                 if (!auth_service_1.AuthService.validatePasswordStrength(password)) {
                     return res.status(400).json({ success: false, message: 'Password does not meet security requirements' });
@@ -134,7 +149,7 @@ class DoctorsController {
                         email: email.toLowerCase(),
                         password: passwordHash,
                         role: client_1.Role.DOCTOR,
-                        organizationId: organizationId || null,
+                        organizationId: finalOrganizationId || null,
                         doctorInfo: {
                             create: {
                                 firstName,
@@ -172,14 +187,25 @@ class DoctorsController {
             try {
                 const { id } = req.params;
                 const { organizationId, firstName, middleName, lastName, specialization, qualifications, experience, contactNumber, address, bio, } = req.body || {};
-                const user = yield prisma.user.findFirst({ where: { id, role: client_1.Role.DOCTOR }, select: { id: true } });
+                const whereClause = { id, role: client_1.Role.DOCTOR };
+                // If user is admin, filter by their organization
+                if (req.user && req.user.role === client_1.Role.ADMIN) {
+                    whereClause.organizationId = req.user.organizationId;
+                }
+                const user = yield prisma.user.findFirst({ where: whereClause, select: { id: true } });
                 if (!user)
                     return res.status(404).json({ success: false, message: 'Doctor not found' });
+                // If user is admin, they cannot change the organization
+                const updateData = {};
+                if (req.user && req.user.role === client_1.Role.ADMIN) {
+                    // Admin cannot change organization, so we don't include organizationId in update
+                }
+                else {
+                    updateData.organizationId = organizationId !== null && organizationId !== void 0 ? organizationId : undefined;
+                }
                 const updated = yield prisma.user.update({
                     where: { id },
-                    data: {
-                        organizationId: organizationId !== null && organizationId !== void 0 ? organizationId : undefined,
-                        doctorInfo: {
+                    data: Object.assign(Object.assign({}, updateData), { doctorInfo: {
                             upsert: {
                                 create: {
                                     firstName: firstName || 'Doctor',
@@ -196,8 +222,7 @@ class DoctorsController {
                                 },
                                 update: Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, (firstName !== undefined && { firstName })), (middleName !== undefined && { middleName })), (lastName !== undefined && { lastName })), (specialization !== undefined && { specialization })), (qualifications !== undefined && { qualifications })), (experience !== undefined && { experience: Number(experience) })), (contactNumber !== undefined && { contactNumber })), (address !== undefined && { address })), (bio !== undefined && { bio })),
                             },
-                        },
-                    },
+                        } }),
                     select: { id: true },
                 });
                 res.json({ success: true, data: updated, message: 'Doctor updated successfully' });
@@ -213,7 +238,12 @@ class DoctorsController {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const { id } = req.params;
-                const user = yield prisma.user.findFirst({ where: { id, role: client_1.Role.DOCTOR }, select: { id: true } });
+                const whereClause = { id, role: client_1.Role.DOCTOR };
+                // If user is admin, filter by their organization
+                if (req.user && req.user.role === client_1.Role.ADMIN) {
+                    whereClause.organizationId = req.user.organizationId;
+                }
+                const user = yield prisma.user.findFirst({ where: whereClause, select: { id: true } });
                 if (!user)
                     return res.status(404).json({ success: false, message: 'Doctor not found' });
                 // Clean up related records with safe order

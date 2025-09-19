@@ -8,8 +8,13 @@ export interface IUser {
   id: string;
   email: string;
   role: Role;
+  organizationId: string | null;
   createdAt: Date;
   updatedAt: Date;
+  profilePicture: string | null;
+  profilePictureVerified: boolean;
+  profilePictureVerifiedBy: string | null;
+  profilePictureVerifiedAt: Date | null;
 }
 
 export interface IUserWithPassword extends IUser {
