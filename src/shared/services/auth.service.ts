@@ -1,34 +1,69 @@
-import { PrismaClient, Role, Sex } from '@prisma/client';
-import { hash, compare } from 'bcryptjs';
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { securityConfig } from '../../config/security.config';
-import { AppError, ErrorTypes } from '../middleware/error-handler';
+import securityConfig from '../../config/security.config';
 import {
-  IUserProfile,
   ILoginRequest,
   IRegisterRequest,
   IAuthResponse,
   IRefreshTokenRequest,
   IChangePasswordRequest,
   IUpdateProfileRequest,
+  IUserProfile,
   IJWTPayload,
-  IRefreshTokenPayload,
-  IApiResponse,
 } from '../../types';
 
 const prisma = new PrismaClient();
 
-export class AuthService {
-  /**
-   * User login with enhanced security
-   */
-  static async login(loginData: ILoginRequest): Promise<IAuthResponse> {
-    const { email, password } = loginData;
+function signAccessToken(payload: IJWTPayload): string {
+  return jwt.sign(payload, securityConfig.jwt.accessToken.secret, {
+    algorithm: securityConfig.jwt.accessToken.algorithm,
+    expiresIn: securityConfig.jwt.accessToken.expiresIn,
+  });
+}
 
-    // Find user by email
+function calculateExpiryDate(days: number): Date {
+  const now = new Date();
+  now.setDate(now.getDate() + days);
+  return now;
+}
+
+export class AuthService {
+  static validatePasswordStrength(password: string): boolean {
+    // Password must be at least 8 characters long
+    if (password.length < 8) {
+      return false;
+    }
+    
+    // Password must contain at least one uppercase letter
+    if (!/[A-Z]/.test(password)) {
+      return false;
+    }
+    
+    // Password must contain at least one lowercase letter
+    if (!/[a-z]/.test(password)) {
+      return false;
+    }
+    
+    // Password must contain at least one number
+    if (!/\d/.test(password)) {
+      return false;
+    }
+    
+    // Password must contain at least one special character
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      return false;
+    }
+    
+    return true;
+  }
+
+  static async login(request: ILoginRequest): Promise<IAuthResponse> {
+    const { email, password } = request;
+
     const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email },
       include: {
         doctorInfo: true,
         patientInfo: true,
@@ -37,631 +72,405 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new AppError('Invalid email or password', 401, ErrorTypes.AUTHENTICATION_ERROR);
+      throw new Error('Invalid email or password');
     }
 
-    // Verify password
-    const isPasswordValid = await compare(password, user.password);
-    if (!isPasswordValid) {
-      throw new AppError('Invalid email or password', 401, ErrorTypes.AUTHENTICATION_ERROR);
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      throw new Error('Invalid email or password');
     }
 
-    // Check concurrent sessions
-    await this.checkConcurrentSessions(user.id);
-
-    // Generate tokens
-    const token = this.generateAccessToken(user);
-    const refreshToken = await this.generateRefreshToken(user.id);
-
-    // Create user profile
-    const userProfile: IUserProfile = {
-      id: user.id,
+    const payload: IJWTPayload = {
+      userId: user.id,
       email: user.email,
-      role: user.role,
-      organizationId: user.organizationId,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
-      profilePicture: user.profilePicture,
-      profilePictureVerified: user.profilePictureVerified,
-      profilePictureVerifiedBy: user.profilePictureVerifiedBy,
-      profilePictureVerifiedAt: user.profilePictureVerifiedAt,
-      doctorInfo: user.doctorInfo || undefined,
-      patientInfo: user.patientInfo || undefined,
+      role: user.role as any,
     };
 
-    // Log successful login
-    await this.logUserActivity(user.id, 'LOGIN', 'SUCCESS');
+    const token = signAccessToken(payload);
+
+    // Create refresh token (random UUID stored in DB)
+    const refreshTokenValue = uuidv4();
+    const refreshToken = await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        token: refreshTokenValue,
+        expiresAt: calculateExpiryDate(7),
+      },
+    });
+
+    const userProfile = user as unknown as IUserProfile;
 
     return {
       user: userProfile,
       token,
-      refreshToken,
+      refreshToken: refreshToken.token,
     };
   }
 
-  /**
-   * User registration with enhanced validation
-   */
-  static async register(registerData: IRegisterRequest): Promise<IAuthResponse> {
-    const {
-      email,
-      password,
-      role,
-      firstName,
-      lastName,
-      specialization,
-      qualifications,
-      experience,
-      fullName,
-      gender,
-      dateOfBirth,
-      contactNumber,
-      address,
-      bio,
-      weight,
-      height,
-      bloodType,
-      medicalHistory,
-      allergies,
-      medications,
-      // New: Emergency contact & Insurance
-      emergencyContactName,
-      emergencyContactRelationship,
-      emergencyContactNumber,
-      emergencyContactAddress,
-      insuranceProviderName,
-      insurancePolicyNumber,
-      insuranceContact,
-    } = registerData;
-
-    // Validate password strength
-    if (!this.validatePasswordStrength(password)) {
-      throw new AppError('Password does not meet security requirements', 400, ErrorTypes.VALIDATION_ERROR);
-    }
+  static async register(request: IRegisterRequest): Promise<IAuthResponse> {
+    const { email, password, role } = request;
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
-    });
-
+    const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      throw new AppError('User with this email already exists', 409, ErrorTypes.VALIDATION_ERROR);
+      throw new Error('User with this email already exists');
     }
 
-    // Hash password with configured salt rounds
-    const hashedPassword = await hash(password, securityConfig.password.saltRounds);
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user with transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // Create base user
-      const user = await tx.user.create({
+    // Create user based on role
+    if (role === 'PATIENT') {
+      const { fullName, gender, dateOfBirth, contactNumber, address, weight, height, bloodType, medicalHistory, allergies, medications, emergencyContactName, emergencyContactRelationship, emergencyContactNumber, emergencyContactAddress, insuranceProviderName, insurancePolicyNumber, insuranceContact } = request;
+
+      const user = await prisma.user.create({
         data: {
-          email: email.toLowerCase(),
+          email,
           password: hashedPassword,
-          role,
+          role: role as any,
+          patientInfo: {
+            create: {
+              fullName: fullName!,
+              gender: gender as any,
+              dateOfBirth: new Date(dateOfBirth!),
+              contactNumber: contactNumber!,
+              address: address!,
+              weight: weight!,
+              height: height!,
+              bloodType: bloodType!,
+              medicalHistory: medicalHistory || null,
+              allergies: allergies || null,
+              medications: medications || null,
+            },
+          },
+        },
+        include: {
+          patientInfo: true,
         },
       });
 
-      // Create role-specific information
-      if (role === Role.DOCTOR) {
-        if (!firstName || !lastName || !specialization || !qualifications || !experience) {
-          throw new AppError('Doctor registration requires firstName, lastName, specialization, qualifications, and experience', 400, ErrorTypes.VALIDATION_ERROR);
-        }
-
-        await tx.doctorInfo.create({
+      // Create emergency contact if provided
+      if (emergencyContactName) {
+        await prisma.emergencyContact.create({
           data: {
-            userId: user.id,
-            firstName,
-            lastName,
-            specialization,
-            qualifications,
-            experience,
-            gender: gender || Sex.OTHER,
-            dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : new Date(),
-            contactNumber: contactNumber || '',
-            address: address || '',
-            bio: bio || '',
+            patientId: user.id,
+            contactName: emergencyContactName,
+            relationship: emergencyContactRelationship || '',
+            contactNumber: emergencyContactNumber || '',
+            contactAddress: emergencyContactAddress || null,
           },
         });
-      } else if (role === Role.PATIENT) {
-        if (!fullName || !gender || !dateOfBirth || !contactNumber || !address || !weight || !height || !bloodType) {
-          throw new AppError('Patient registration requires fullName, gender, dateOfBirth, contactNumber, address, weight, height, and bloodType', 400, ErrorTypes.VALIDATION_ERROR);
-        }
-
-        const createdPatient = await tx.patientInfo.create({
-          data: {
-            userId: user.id,
-            fullName,
-            gender,
-            dateOfBirth: new Date(dateOfBirth),
-            contactNumber,
-            address,
-            weight,
-            height,
-            bloodType,
-            medicalHistory: medicalHistory || '',
-            allergies: allergies || '',
-            medications: medications || '',
-          },
-        });
-
-        // Optional: Emergency Contact
-        if (emergencyContactName && emergencyContactRelationship && emergencyContactNumber) {
-          await tx.emergencyContact.create({
-            data: {
-              patientId: user.id,
-              contactName: emergencyContactName,
-              relationship: emergencyContactRelationship,
-              contactNumber: emergencyContactNumber,
-              contactAddress: emergencyContactAddress || null,
-            },
-          });
-        }
-
-        // Optional: Insurance Info
-        if (insuranceProviderName && insurancePolicyNumber && insuranceContact) {
-          await tx.insuranceInfo.create({
-            data: {
-              patientId: user.id,
-              providerName: insuranceProviderName,
-              policyNumber: insurancePolicyNumber,
-              insuranceContact: insuranceContact,
-            },
-          });
-        }
       }
 
-      return user;
-    });
+      // Create insurance info if provided
+      if (insuranceProviderName) {
+        await prisma.insuranceInfo.create({
+          data: {
+            patientId: user.id,
+            providerName: insuranceProviderName,
+            policyNumber: insurancePolicyNumber || '',
+            insuranceContact: insuranceContact || '',
+          },
+        });
+      }
 
-    // Get complete user profile
-    const userProfile = await prisma.user.findUnique({
-      where: { id: result.id },
-      include: {
-        doctorInfo: true,
-        patientInfo: true,
-        doctorCategories: true,
-      },
-    });
+      const payload: IJWTPayload = {
+        userId: user.id,
+        email: user.email,
+        role: user.role as any,
+      };
 
-    if (!userProfile) {
-      throw new AppError('Failed to create user profile', 500, ErrorTypes.INTERNAL_SERVER_ERROR);
-    }
+      const token = signAccessToken(payload);
 
-    // Generate tokens
-    const token = this.generateAccessToken(userProfile);
-    const refreshToken = await this.generateRefreshToken(userProfile.id);
-
-    // Log successful registration
-    await this.logUserActivity(userProfile.id, 'REGISTER', 'SUCCESS');
-
-    return {
-      user: userProfile as IUserProfile,
-      token,
-      refreshToken,
-    };
-  }
-
-  /**
-   * Refresh access token with security checks
-   */
-  static async refreshToken(refreshData: IRefreshTokenRequest): Promise<{ token: string }> {
-    const { refreshToken } = refreshData;
-
-    try {
-      // Verify refresh token
-      const decoded = jwt.verify(refreshToken, securityConfig.jwt.refreshToken.secret) as IRefreshTokenPayload;
-
-      // Check if refresh token exists in database
-      const tokenRecord = await prisma.refreshToken.findUnique({
-        where: { id: decoded.tokenId },
-        include: { user: true },
+      // Create refresh token
+      const refreshTokenValue = uuidv4();
+      const refreshToken = await prisma.refreshToken.create({
+        data: {
+          userId: user.id,
+          token: refreshTokenValue,
+          expiresAt: calculateExpiryDate(7),
+        },
       });
 
-      if (!tokenRecord || !tokenRecord.user) {
-        throw new AppError('Invalid refresh token', 401, ErrorTypes.AUTHENTICATION_ERROR);
-      }
+      const userProfile = user as unknown as IUserProfile;
 
-      // Check if token is expired
-      if (tokenRecord.expiresAt < new Date()) {
-        // Remove expired token
-        await prisma.refreshToken.delete({
-          where: { id: decoded.tokenId },
-        });
-        throw new AppError('Refresh token expired', 401, ErrorTypes.AUTHENTICATION_ERROR);
-      }
+      return {
+        user: userProfile,
+        token,
+        refreshToken: refreshToken.token,
+      };
+    } else if (role === 'DOCTOR') {
+      const { firstName, lastName, specialization, qualifications, experience, gender, dateOfBirth, contactNumber, address, bio } = request;
 
-      // Check if user is still active
-      // if (!tokenRecord.user.isActive) {
-      //   throw new AppError('User account is deactivated', 403, ErrorTypes.AUTHORIZATION_ERROR);
-      // }
+      const user = await prisma.user.create({
+        data: {
+          email,
+          password: hashedPassword,
+          role: role as any,
+          doctorInfo: {
+            create: {
+              firstName: firstName!,
+              lastName: lastName!,
+              gender: gender as any,
+              dateOfBirth: new Date(dateOfBirth!),
+              contactNumber: contactNumber!,
+              address: address!,
+              bio: bio || '',
+              specialization: specialization!,
+              qualifications: qualifications!,
+              experience: experience!,
+            },
+          },
+        },
+        include: {
+          doctorInfo: true,
+        },
+      });
 
-      // Generate new access token
-      const token = this.generateAccessToken(tokenRecord.user);
+      const payload: IJWTPayload = {
+        userId: user.id,
+        email: user.email,
+        role: user.role as any,
+      };
 
-      // Log token refresh
-      await this.logUserActivity(tokenRecord.user.id, 'TOKEN_REFRESH', 'SUCCESS');
+      const token = signAccessToken(payload);
 
-      return { token };
-    } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
-      throw new AppError('Invalid refresh token', 401, ErrorTypes.AUTHENTICATION_ERROR);
+      // Create refresh token
+      const refreshTokenValue = uuidv4();
+      const refreshToken = await prisma.refreshToken.create({
+        data: {
+          userId: user.id,
+          token: refreshTokenValue,
+          expiresAt: calculateExpiryDate(7),
+        },
+      });
+
+      const userProfile = user as unknown as IUserProfile;
+
+      return {
+        user: userProfile,
+        token,
+        refreshToken: refreshToken.token,
+      };
+    } else {
+      throw new Error('Invalid role specified');
     }
   }
 
-  /**
-   * Change password with enhanced security
-   */
-  static async changePassword(userId: string, changeData: IChangePasswordRequest): Promise<void> {
-    const { currentPassword, newPassword } = changeData;
+  static async refreshToken(request: IRefreshTokenRequest): Promise<{ token: string; refreshToken: string }> {
+    const { refreshToken } = request;
 
-    // Validate new password strength
-    if (!this.validatePasswordStrength(newPassword)) {
-      throw new AppError('New password does not meet security requirements', 400, ErrorTypes.VALIDATION_ERROR);
+    const existing = await prisma.refreshToken.findUnique({ where: { token: refreshToken } });
+    if (!existing || existing.expiresAt < new Date()) {
+      throw new Error('Invalid or expired refresh token');
     }
 
-    // Get user with password
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
+    const user = await prisma.user.findUnique({ where: { id: existing.userId } });
     if (!user) {
-      throw new AppError('User not found', 404, ErrorTypes.NOT_FOUND_ERROR);
+      throw new Error('User not found');
     }
 
-    // Verify current password
-    const isCurrentPasswordValid = await compare(currentPassword, user.password);
-    if (!isCurrentPasswordValid) {
-      throw new AppError('Current password is incorrect', 401, ErrorTypes.AUTHENTICATION_ERROR);
-    }
+    const newAccessToken = signAccessToken({ userId: user.id, email: user.email, role: user.role as any });
 
-    // Check if new password is same as current
-    const isSamePassword = await compare(newPassword, user.password);
-    if (isSamePassword) {
-      throw new AppError('New password must be different from current password', 400, ErrorTypes.VALIDATION_ERROR);
-    }
-
-    // Hash new password
-    const hashedNewPassword = await hash(newPassword, securityConfig.password.saltRounds);
-
-    // Update password
-    await prisma.user.update({
-      where: { id: userId },
-      data: { password: hashedNewPassword },
+    // Rotate refresh token
+    const newRefreshTokenValue = uuidv4();
+    const updated = await prisma.refreshToken.update({
+      where: { token: refreshToken },
+      data: { token: newRefreshTokenValue, expiresAt: calculateExpiryDate(7) },
     });
 
-    // Invalidate all refresh tokens for this user
-    await prisma.refreshToken.deleteMany({
-      where: { userId },
-    });
-
-    // Log password change
-    await this.logUserActivity(userId, 'PASSWORD_CHANGE', 'SUCCESS');
+    return { token: newAccessToken, refreshToken: updated.token };
   }
 
-  /**
-   * Update user profile with validation
-   */
-  static async updateProfile(userId: string, updateData: IUpdateProfileRequest): Promise<IUserProfile> {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        doctorInfo: true,
-        patientInfo: true,
-        doctorCategories: true,
-      },
-    });
+  static async changePassword(_userId: string, _request: IChangePasswordRequest): Promise<void> {
+    throw new Error('Change password not implemented');
+  }
 
-    if (!user) {
-      throw new AppError('User not found', 404, ErrorTypes.NOT_FOUND_ERROR);
+  static async updateProfile(userId: string, request: IUpdateProfileRequest): Promise<IUserProfile> {
+    // Update User table fields
+    const userUpdateData: any = {};
+    
+    if (Object.prototype.hasOwnProperty.call(request, 'profilePicture')) {
+      userUpdateData.profilePicture = (request.profilePicture === null || request.profilePicture === undefined || request.profilePicture === '')
+        ? null
+        : request.profilePicture;
+      userUpdateData.profilePictureVerified = false;
+      userUpdateData.profilePictureVerifiedBy = null;
+      userUpdateData.profilePictureVerifiedAt = null;
     }
 
-    // Update profile picture in User table (for all users)
-    if (updateData.profilePicture !== undefined) {
+    if (request.email !== undefined) {
+      userUpdateData.email = request.email;
+    }
+
+    // Update User table if there are changes
+    if (Object.keys(userUpdateData).length > 0) {
       await prisma.user.update({
         where: { id: userId },
-        data: {
-          profilePicture: updateData.profilePicture,
+        data: userUpdateData,
+      });
+    }
+
+    // Update DoctorInfo table fields
+    const doctorUpdateData: any = {};
+    
+    if (request.firstName !== undefined) doctorUpdateData.firstName = request.firstName;
+    if (request.lastName !== undefined) doctorUpdateData.lastName = request.lastName;
+    if (request.middleName !== undefined) doctorUpdateData.middleName = request.middleName;
+    if (request.bio !== undefined) doctorUpdateData.bio = request.bio;
+    if (request.contactNumber !== undefined) doctorUpdateData.contactNumber = request.contactNumber;
+    if (request.address !== undefined) doctorUpdateData.address = request.address;
+    if (request.specialization !== undefined) doctorUpdateData.specialization = request.specialization;
+    if (request.qualifications !== undefined) doctorUpdateData.qualifications = request.qualifications;
+    if (request.experience !== undefined) doctorUpdateData.experience = request.experience;
+    if (request.gender !== undefined) doctorUpdateData.gender = request.gender;
+    if (request.dateOfBirth !== undefined) doctorUpdateData.dateOfBirth = request.dateOfBirth ? new Date(request.dateOfBirth) : null;
+    
+    // Medical license fields
+    if (request.prcId !== undefined) doctorUpdateData.prcId = request.prcId;
+    if (request.ptrId !== undefined) doctorUpdateData.ptrId = request.ptrId;
+    if (request.medicalLicenseLevel !== undefined) doctorUpdateData.medicalLicenseLevel = request.medicalLicenseLevel;
+    if (request.philHealthAccreditation !== undefined) doctorUpdateData.philHealthAccreditation = request.philHealthAccreditation;
+    if (request.licenseNumber !== undefined) doctorUpdateData.licenseNumber = request.licenseNumber;
+    if (request.licenseExpiry !== undefined) doctorUpdateData.licenseExpiry = request.licenseExpiry ? new Date(request.licenseExpiry) : null;
+    if (request.isLicenseActive !== undefined) doctorUpdateData.isLicenseActive = request.isLicenseActive;
+    if (request.additionalCertifications !== undefined) doctorUpdateData.additionalCertifications = request.additionalCertifications;
+    if (request.licenseIssuedBy !== undefined) doctorUpdateData.licenseIssuedBy = request.licenseIssuedBy;
+    if (request.licenseIssuedDate !== undefined) doctorUpdateData.licenseIssuedDate = request.licenseIssuedDate ? new Date(request.licenseIssuedDate) : null;
+    if (request.renewalRequired !== undefined) doctorUpdateData.renewalRequired = request.renewalRequired;
+    
+    // ID Document fields
+    if (request.prcIdImage !== undefined) doctorUpdateData.prcIdImage = request.prcIdImage;
+    if (request.ptrIdImage !== undefined) doctorUpdateData.ptrIdImage = request.ptrIdImage;
+    if (request.medicalLicenseImage !== undefined) doctorUpdateData.medicalLicenseImage = request.medicalLicenseImage;
+    if (request.additionalIdImages !== undefined) doctorUpdateData.additionalIdImages = request.additionalIdImages;
+
+    // Update DoctorInfo table if there are changes
+    if (Object.keys(doctorUpdateData).length > 0) {
+      await prisma.doctorInfo.upsert({
+        where: { userId },
+        update: doctorUpdateData,
+        create: {
+          userId,
+          ...doctorUpdateData,
+          // Set required fields with defaults if not provided
+          firstName: doctorUpdateData.firstName || '',
+          lastName: doctorUpdateData.lastName || '',
+          gender: doctorUpdateData.gender || 'OTHER',
+          dateOfBirth: doctorUpdateData.dateOfBirth || new Date(),
+          contactNumber: doctorUpdateData.contactNumber || '',
+          address: doctorUpdateData.address || '',
+          bio: doctorUpdateData.bio || '',
+          specialization: doctorUpdateData.specialization || '',
+          qualifications: doctorUpdateData.qualifications || '',
+          experience: doctorUpdateData.experience || 0,
         },
       });
     }
 
-    // Update role-specific information
-    if (user.role === Role.DOCTOR && user.doctorInfo) {
-      await prisma.doctorInfo.update({
+    // Update PatientInfo and related EmergencyContact when patient fields are present
+    const patientUpdateData: any = {};
+    if (request.fullName !== undefined) patientUpdateData.fullName = request.fullName;
+    if (request.gender !== undefined) patientUpdateData.gender = request.gender;
+    if (request.dateOfBirth !== undefined) patientUpdateData.dateOfBirth = request.dateOfBirth ? new Date(request.dateOfBirth) : null;
+    if (request.contactNumber !== undefined) patientUpdateData.contactNumber = request.contactNumber;
+    if (request.address !== undefined) patientUpdateData.address = request.address;
+    if (request.weight !== undefined) patientUpdateData.weight = request.weight as number;
+    if (request.height !== undefined) patientUpdateData.height = request.height as number;
+    if (request.bloodType !== undefined) patientUpdateData.bloodType = request.bloodType as string;
+    if (request.medicalHistory !== undefined) patientUpdateData.medicalHistory = request.medicalHistory ?? null;
+    if (request.allergies !== undefined) patientUpdateData.allergies = request.allergies ?? null;
+    if (request.medications !== undefined) patientUpdateData.medications = request.medications ?? null;
+
+    if (Object.keys(patientUpdateData).length > 0) {
+      await prisma.patientInfo.upsert({
         where: { userId },
-        data: {
-          firstName: updateData.firstName,
-          lastName: updateData.lastName,
-          middleName: updateData.middleName,
-          bio: updateData.bio,
-          contactNumber: updateData.contactNumber,
-          address: updateData.address,
-          specialization: updateData.specialization,
-          qualifications: updateData.qualifications,
-          experience: updateData.experience,
-        },
-      });
-    } else if (user.role === Role.PATIENT && user.patientInfo) {
-      await prisma.patientInfo.update({
-        where: { userId },
-        data: {
-          fullName: updateData.fullName,
-          gender: updateData.gender,
-          dateOfBirth: updateData.dateOfBirth ? new Date(updateData.dateOfBirth) : undefined,
-          contactNumber: updateData.contactNumber,
-          address: updateData.address,
-          weight: updateData.weight,
-          height: updateData.height,
-          bloodType: updateData.bloodType,
-          medicalHistory: updateData.medicalHistory,
-          allergies: updateData.allergies,
-          medications: updateData.medications,
+        update: patientUpdateData,
+        create: {
+          userId,
+          fullName: patientUpdateData.fullName || '',
+          gender: patientUpdateData.gender || 'OTHER',
+          dateOfBirth: patientUpdateData.dateOfBirth || new Date(),
+          contactNumber: patientUpdateData.contactNumber || '',
+          address: patientUpdateData.address || '',
+          weight: typeof patientUpdateData.weight === 'number' ? patientUpdateData.weight : 0,
+          height: typeof patientUpdateData.height === 'number' ? patientUpdateData.height : 0,
+          bloodType: patientUpdateData.bloodType || '',
+          medicalHistory: patientUpdateData.medicalHistory ?? null,
+          allergies: patientUpdateData.allergies ?? null,
+          medications: patientUpdateData.medications ?? null,
         },
       });
     }
 
-    // Get updated user profile
-    const updatedUser = await prisma.user.findUnique({
+    // Upsert EmergencyContact if provided
+    if (request.emergencyContact) {
+      const { contactName, relationship, contactNumber, contactAddress } = request.emergencyContact;
+      await prisma.emergencyContact.upsert({
+        where: { patientId: userId },
+        update: {
+          contactName,
+          relationship,
+          contactNumber,
+          contactAddress: contactAddress ?? null,
+        },
+        create: {
+          patientId: userId,
+          contactName,
+          relationship,
+          contactNumber,
+          contactAddress: contactAddress ?? null,
+        },
+      });
+    }
+
+    // Return fresh profile
+    const updated = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         doctorInfo: true,
-        patientInfo: true,
+        patientInfo: { include: { emergencyContact: true, insuranceInfo: true } },
         doctorCategories: true,
       },
     });
 
-    if (!updatedUser) {
-      throw new AppError('Failed to update user profile', 500, ErrorTypes.INTERNAL_SERVER_ERROR);
-    }
-
-    // Log profile update
-    await this.logUserActivity(userId, 'PROFILE_UPDATE', 'SUCCESS');
-
-    return updatedUser as IUserProfile;
+    if (!updated) throw new Error('User not found');
+    return updated as unknown as IUserProfile;
   }
 
-  /**
-   * Logout user with session cleanup
-   */
   static async logout(userId: string, refreshToken?: string): Promise<void> {
-    if (refreshToken) {
-      // Remove specific refresh token
-      await prisma.refreshToken.deleteMany({
-        where: {
-          userId,
-          token: refreshToken,
-        },
-      });
-    } else {
-      // Remove all refresh tokens for user
-      await prisma.refreshToken.deleteMany({
-        where: { userId },
-      });
-    }
-
-    // Log logout
-    await this.logUserActivity(userId, 'LOGOUT', 'SUCCESS');
+    if (!refreshToken) return;
+    await prisma.refreshToken.deleteMany({ where: { userId, token: refreshToken } });
   }
 
-  /**
-   * Get user profile
-   */
   static async getUserProfile(userId: string): Promise<IUserProfile> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
+        organization: true,
         doctorInfo: true,
-        patientInfo: true,
+        patientInfo: { include: { emergencyContact: true, insuranceInfo: true } },
         doctorCategories: true,
       },
     });
-
-    if (!user) {
-      throw new AppError('User not found', 404, ErrorTypes.NOT_FOUND_ERROR);
-    }
-
-    return user as IUserProfile;
+    if (!user) throw new Error('User not found');
+    return user as unknown as IUserProfile;
   }
 
-  /**
-   * Generate access token with security configuration
-   */
-  private static generateAccessToken(user: any): string {
-    const payload: IJWTPayload = {
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      iat: Math.floor(Date.now() / 1000),
-    };
-
-    const secret = securityConfig.jwt.accessToken.secret;
-    if (!secret) {
-      throw new AppError('JWT_SECRET environment variable is not set', 500, ErrorTypes.INTERNAL_SERVER_ERROR);
-    }
-
-    return jwt.sign(payload, secret, {
-      expiresIn: securityConfig.jwt.accessToken.expiresIn,
-      algorithm: securityConfig.jwt.accessToken.algorithm,
-      issuer: 'qhealth-backend',
-      audience: 'qhealth-users',
-    } as jwt.SignOptions);
-  }
-
-  /**
-   * Generate refresh token with security configuration
-   */
-  private static async generateRefreshToken(userId: string): Promise<string> {
-    const tokenId = uuidv4();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-
-    // Store refresh token in database
-    await prisma.refreshToken.create({
-      data: {
-        id: tokenId,
-        userId,
-        expiresAt,
-        token: tokenId,
-      },
-    });
-
-    // Generate JWT refresh token
-    const payload: IRefreshTokenPayload = {
-      userId,
-      tokenId,
-    };
-
-    const refreshSecret = securityConfig.jwt.refreshToken.secret;
-    if (!refreshSecret) {
-      throw new AppError('JWT_REFRESH_SECRET environment variable is not set', 500, ErrorTypes.INTERNAL_SERVER_ERROR);
-    }
-
-    return jwt.sign(payload, refreshSecret, {
-      expiresIn: securityConfig.jwt.refreshToken.expiresIn,
-      algorithm: securityConfig.jwt.refreshToken.algorithm,
-      issuer: 'qhealth-backend',
-      audience: 'qhealth-users',
-    } as jwt.SignOptions);
-  }
-
-  /**
-   * Enhanced password strength validation
-   */
-  static validatePasswordStrength(password: string): boolean {
-    const { password: config } = securityConfig;
-    
-    // Basic length check
-    if (password.length < config.minLength) {
-      return false;
-    }
-
-    // Check for required character types
-    const hasLowercase = /[a-z]/.test(password);
-    const hasUppercase = /[A-Z]/.test(password);
-    const hasNumbers = /\d/.test(password);
-    const hasSpecialChars = /[@$!%*?&]/.test(password);
-
-    return hasLowercase && hasUppercase && hasNumbers && hasSpecialChars;
-  }
-
-  /**
-   * Check concurrent sessions limit
-   */
-  private static async checkConcurrentSessions(userId: string): Promise<void> {
-    const activeSessions = await prisma.refreshToken.count({
-      where: {
-        userId,
-        expiresAt: { gt: new Date() },
-      },
-    });
-
-    if (activeSessions >= securityConfig.session.maxConcurrentSessions) {
-      // Remove oldest sessions (by expiration time as fallback)
-      const oldestSessions = await prisma.refreshToken.findMany({
-        where: {
-          userId,
-          expiresAt: { gt: new Date() },
-        },
-        orderBy: { expiresAt: 'asc' },
-        take: activeSessions - securityConfig.session.maxConcurrentSessions + 1,
-      });
-
-      await prisma.refreshToken.deleteMany({
-        where: {
-          id: { in: oldestSessions.map(s => s.id) },
-        },
-      });
-
-      // Log session cleanup
-      await this.logUserActivity(userId, 'SESSION_CLEANUP', 'INFO');
-    }
-  }
-
-  /**
-   * Log user activity for audit trail
-   */
-  private static async logUserActivity(userId: string, action: string, status: string): Promise<void> {
-    try {
-      // TODO: Implement audit logging to database or external service
-      console.log(`📊 User Activity: User ${userId} - ${action} - ${status} - ${new Date().toISOString()}`);
-    } catch (error) {
-      // Don't fail the main operation if logging fails
-      console.error('Failed to log user activity:', error);
-    }
-  }
-
-  /**
-   * Check if email exists
-   */
   static async emailExists(email: string): Promise<boolean> {
-    const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
-    });
+    const user = await prisma.user.findUnique({ where: { email } });
     return !!user;
   }
 
-  /**
-   * Reset password (for admin use)
-   */
-  static async resetPassword(userId: string, newPassword: string): Promise<void> {
-    // Validate password strength
-    if (!this.validatePasswordStrength(newPassword)) {
-      throw new AppError('Password does not meet security requirements', 400, ErrorTypes.VALIDATION_ERROR);
-    }
-
-    const hashedPassword = await hash(newPassword, securityConfig.password.saltRounds);
-
-    await prisma.user.update({
-      where: { id: userId },
-      data: { password: hashedPassword },
-    });
-
-    // Invalidate all refresh tokens
-    await prisma.refreshToken.deleteMany({
-      where: { userId },
-    });
-
-    // Log password reset
-    await this.logUserActivity(userId, 'PASSWORD_RESET', 'SUCCESS');
+  static async resetPassword(_userId: string, _newPassword: string): Promise<void> {
+    throw new Error('Reset password not implemented');
   }
 
-  /**
-   * Deactivate user account
-   */
-  static async deactivateUser(userId: string): Promise<void> {
-    // You can add an isActive field to your User model
-    // await prisma.user.update({
-    //   where: { id: userId },
-    //   data: { isActive: false },
-    // });
-
-    // For now, just remove refresh tokens
-    await prisma.refreshToken.deleteMany({
-      where: { userId },
-    });
-
-    // Log account deactivation
-    await this.logUserActivity(userId, 'ACCOUNT_DEACTIVATION', 'SUCCESS');
-  }
-
-  /**
-   * Clean up expired tokens (cron job)
-   */
-  static async cleanupExpiredTokens(): Promise<void> {
-    try {
-      const result = await prisma.refreshToken.deleteMany({
-        where: {
-          expiresAt: { lt: new Date() },
-        },
-      });
-
-      if (result.count > 0) {
-        console.log(`🧹 Cleaned up ${result.count} expired tokens`);
-      }
-    } catch (error) {
-      console.error('Failed to cleanup expired tokens:', error);
-    }
+  static async deactivateUser(_userId: string): Promise<void> {
+    throw new Error('Deactivate user not implemented');
   }
 }
+
+export default AuthService;
+
+

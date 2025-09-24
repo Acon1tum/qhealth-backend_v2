@@ -133,6 +133,127 @@ class AppointmentsController {
             }
         });
     }
+    // Create appointment request by doctor for patient (for scheduling to another doctor)
+    createAppointmentRequestByDoctor(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c;
+            try {
+                const { patientId, doctorId, requestedDate, requestedTime, reason, priority, notes } = req.body;
+                const currentDoctorId = req.user.id;
+                console.log('Doctor scheduling appointment for patient:', { patientId, doctorId, requestedDate, requestedTime, reason, priority, notes });
+                // Validate required fields
+                if (!patientId || !doctorId || !requestedDate || !requestedTime || !reason) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Missing required fields: patientId, doctorId, requestedDate, requestedTime, reason'
+                    });
+                }
+                // Validate UUID format for IDs
+                const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+                if (!uuidRegex.test(patientId) || !uuidRegex.test(doctorId)) {
+                    return res.status(400).json({ success: false, message: 'Invalid patientId or doctorId format' });
+                }
+                // Check if patient exists
+                const patient = yield prisma.user.findFirst({
+                    where: { id: patientId, role: client_2.Role.PATIENT }
+                });
+                if (!patient) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Patient not found'
+                    });
+                }
+                // Check if target doctor exists and is a doctor
+                const targetDoctor = yield prisma.user.findFirst({
+                    where: { id: doctorId, role: client_2.Role.DOCTOR }
+                });
+                if (!targetDoctor) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Target doctor not found'
+                    });
+                }
+                // Validate date format
+                const parsedDate = new Date(requestedDate);
+                if (isNaN(parsedDate.getTime())) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Invalid date format'
+                    });
+                }
+                // Validate time format
+                if (!requestedTime || !/\d{2}:\d{2}/.test(requestedTime)) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Invalid time format. Expected HH:MM'
+                    });
+                }
+                // Check target doctor availability
+                const isAvailable = yield this.checkDoctorAvailability(doctorId, requestedDate, requestedTime);
+                if (!isAvailable) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Target doctor is not available at the requested time'
+                    });
+                }
+                // Check for existing appointment conflicts
+                const hasConflict = yield this.checkAppointmentConflict(doctorId, parsedDate, requestedTime);
+                if (hasConflict) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Target doctor already has an appointment at this time'
+                    });
+                }
+                // Create appointment request
+                const appointment = yield prisma.appointmentRequest.create({
+                    data: {
+                        patientId: patientId,
+                        doctorId: doctorId,
+                        requestedDate: parsedDate,
+                        requestedTime,
+                        reason: `Referred by current doctor: ${reason}`,
+                        priority: priority || 'NORMAL',
+                        notes: notes ? `Scheduled by doctor. Notes: ${notes}` : 'Scheduled by doctor'
+                    },
+                    include: {
+                        patient: {
+                            select: {
+                                id: true,
+                                email: true,
+                                patientInfo: {
+                                    select: { fullName: true }
+                                }
+                            }
+                        },
+                        doctor: {
+                            select: {
+                                id: true,
+                                email: true,
+                                doctorInfo: {
+                                    select: { firstName: true, lastName: true, specialization: true }
+                                }
+                            }
+                        }
+                    }
+                });
+                // Audit log
+                yield audit_service_1.AuditService.logUserActivity(currentDoctorId, 'CREATE_APPOINTMENT_REQUEST_BY_DOCTOR', 'USER_ACTIVITY', `Doctor scheduled appointment for ${(_a = appointment.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName} with Dr. ${(_b = appointment.doctor.doctorInfo) === null || _b === void 0 ? void 0 : _b.firstName} ${(_c = appointment.doctor.doctorInfo) === null || _c === void 0 ? void 0 : _c.lastName}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'APPOINTMENT_REQUEST', appointment.id.toString());
+                res.status(201).json({
+                    success: true,
+                    message: 'Appointment request created successfully',
+                    data: appointment
+                });
+            }
+            catch (error) {
+                console.error('Error creating appointment request by doctor:', error);
+                res.status(500).json({
+                    success: false,
+                    message: 'Failed to create appointment request',
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                });
+            }
+        });
+    }
     // Get appointments for user (patient or doctor)
     getUserAppointments(req, res) {
         return __awaiter(this, void 0, void 0, function* () {

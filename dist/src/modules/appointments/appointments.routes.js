@@ -13,6 +13,8 @@ router.use(auth_middleware_1.authenticateToken);
 router.use(auth_middleware_1.requireAuth);
 // Create appointment request (patients only)
 router.post('/request', (0, auth_middleware_1.requireRole)([client_1.Role.PATIENT]), appointmentsController.createAppointmentRequest.bind(appointmentsController));
+// Create appointment request by doctor for patient (doctors only)
+router.post('/request-by-doctor', (0, auth_middleware_1.requireRole)([client_1.Role.DOCTOR]), appointmentsController.createAppointmentRequestByDoctor.bind(appointmentsController));
 // Get user appointments (patients and doctors)
 router.get('/my-appointments', (0, auth_middleware_1.requireRole)([client_1.Role.PATIENT, client_1.Role.DOCTOR]), appointmentsController.getUserAppointments.bind(appointmentsController));
 // List available doctors (patients need this to request appointments)

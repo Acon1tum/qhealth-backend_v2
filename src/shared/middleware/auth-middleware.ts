@@ -25,9 +25,13 @@ export const authenticateToken = async (
 ): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
+    console.log('🔍 Auth Middleware - Authorization header:', authHeader);
+    
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    console.log('🔍 Auth Middleware - Extracted token:', token ? `${token.substring(0, 20)}...` : 'No token');
 
     if (!token) {
+      console.log('❌ Auth Middleware - No token provided');
       const response: IApiResponse = {
         success: false,
         message: 'Access token is required',
@@ -38,7 +42,9 @@ export const authenticateToken = async (
     }
 
     // Verify token
+    console.log('🔍 Auth Middleware - Verifying token with JWT_SECRET:', process.env.JWT_SECRET ? 'EXISTS' : 'MISSING');
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as IJWTPayload;
+    console.log('🔍 Auth Middleware - Token decoded successfully:', { userId: decoded.userId, email: decoded.email });
     
     // Get user from database
     const user = await prisma.user.findUnique({
@@ -51,6 +57,7 @@ export const authenticateToken = async (
     });
 
     if (!user) {
+      console.log('❌ Auth Middleware - User not found in database:', decoded.userId);
       const response: IApiResponse = {
         success: false,
         message: 'User not found',
@@ -59,6 +66,8 @@ export const authenticateToken = async (
       res.status(401).json(response);
       return;
     }
+
+    console.log('✅ Auth Middleware - User found:', { id: user.id, email: user.email, role: user.role });
 
     // Check if user is active (you can add an isActive field to your User model)
     // if (!user.isActive) {
@@ -77,7 +86,10 @@ export const authenticateToken = async (
 
     next();
   } catch (error) {
+    console.error('❌ Auth Middleware - Authentication error:', error);
+    
     if (error instanceof jwt.JsonWebTokenError) {
+      console.log('❌ Auth Middleware - Invalid JWT token');
       const response: IApiResponse = {
         success: false,
         message: 'Invalid or expired token',
@@ -85,6 +97,7 @@ export const authenticateToken = async (
       };
       res.status(401).json(response);
     } else if (error instanceof jwt.TokenExpiredError) {
+      console.log('❌ Auth Middleware - Token expired');
       const response: IApiResponse = {
         success: false,
         message: 'Token has expired',
@@ -92,6 +105,7 @@ export const authenticateToken = async (
       };
       res.status(401).json(response);
     } else {
+      console.log('❌ Auth Middleware - Other authentication error:', error);
       const response: IApiResponse = {
         success: false,
         message: 'Authentication failed',

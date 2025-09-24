@@ -256,6 +256,7 @@ export interface IChangePasswordRequest {
 }
 
 export interface IUpdateProfileRequest {
+  email?: string;
   firstName?: string;
   lastName?: string;
   middleName?: string;
@@ -274,6 +275,12 @@ export interface IUpdateProfileRequest {
   medicalHistory?: string;
   allergies?: string;
   medications?: string;
+  emergencyContact?: {
+    contactName: string;
+    relationship: string;
+    contactNumber: string;
+    contactAddress?: string;
+  };
   // Profile Picture (for all users)
   profilePicture?: string;
   // Medical License Information (for doctor)

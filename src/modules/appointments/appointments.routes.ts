@@ -16,6 +16,12 @@ router.post('/request',
   appointmentsController.createAppointmentRequest.bind(appointmentsController)
 );
 
+// Create appointment request by doctor for patient (doctors only)
+router.post('/request-by-doctor', 
+  requireRole([Role.DOCTOR]), 
+  appointmentsController.createAppointmentRequestByDoctor.bind(appointmentsController)
+);
+
 // Get user appointments (patients and doctors)
 router.get('/my-appointments', 
   requireRole([Role.PATIENT, Role.DOCTOR]), 

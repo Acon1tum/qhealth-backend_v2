@@ -26,6 +26,7 @@ import { selfCheckRoutes } from './modules/self-check/self-check.routes';
 import { organizationsRoutes } from './modules/organizations/organizations.routes';
 import { doctorsRoutes } from './modules/doctors/doctors.routes';
 import { patientsRoutes } from './modules/patients/patients.routes';
+import labRequestsRoutes from './modules/lab-requests/lab-requests.routes';
 
 // Import middleware
 import { errorHandler, notFoundHandler } from './shared/middleware/error-handler';
@@ -188,6 +189,7 @@ app.use('/api/self-check', selfCheckRoutes);
 app.use('/api/organizations', organizationsRoutes);  
 app.use('/api/doctors', doctorsRoutes);
 app.use('/api/patients', patientsRoutes);
+app.use('/api/lab-requests', labRequestsRoutes);
 
 // Serve static files with enhanced security
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
