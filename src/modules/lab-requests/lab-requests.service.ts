@@ -21,12 +21,12 @@ export class LabRequestService {
         where.status = filter.status;
       }
       if (filter.dateFrom || filter.dateTo) {
-        where.requestedDate = {};
+        where.createdAt = {};
         if (filter.dateFrom) {
-          where.requestedDate.gte = filter.dateFrom;
+          where.createdAt.gte = filter.dateFrom;
         }
         if (filter.dateTo) {
-          where.requestedDate.lte = filter.dateTo;
+          where.createdAt.lte = filter.dateTo;
         }
       }
 
@@ -175,19 +175,13 @@ export class LabRequestService {
   }
 
   // Update lab request status
-  async updateLabRequestStatus(id: string, status: string, notes?: string): Promise<any> {
+  async updateLabRequestStatus(id: string, status: string, note?: string): Promise<any> {
     try {
       const updateData: any = { status };
 
-      // Set appropriate date based on status
-      if (status === 'APPROVED') {
-        updateData.approvedDate = new Date();
-      } else if (status === 'COMPLETED') {
-        updateData.completedDate = new Date();
-      }
-
-      if (notes) {
-        updateData.notes = notes;
+      // Add note if provided
+      if (note) {
+        updateData.note = note;
       }
 
       return await this.updateLabRequest(id, updateData);
@@ -197,25 +191,6 @@ export class LabRequestService {
     }
   }
 
-  // Add test results to lab request
-  async addTestResults(id: string, testResults: string, attachments?: string[]): Promise<any> {
-    try {
-      const updateData: any = {
-        testResults,
-        status: 'COMPLETED',
-        completedDate: new Date()
-      };
-
-      if (attachments && Array.isArray(attachments)) {
-        updateData.attachments = attachments;
-      }
-
-      return await this.updateLabRequest(id, updateData);
-    } catch (error) {
-      console.error('Error adding test results:', error);
-      throw new Error(error instanceof Error ? error.message : 'Failed to add test results');
-    }
-  }
 
   // Delete lab request
   async deleteLabRequest(id: string): Promise<void> {

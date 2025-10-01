@@ -27,10 +27,6 @@ router.put('/:id', (req, res) => {
 router.patch('/:id/status', (req, res) => {
     labRequestsController.updateLabRequestStatus(req, res);
 });
-// PATCH /api/lab-requests/:id/results - Add test results to lab request
-router.patch('/:id/results', (req, res) => {
-    labRequestsController.addTestResults(req, res);
-});
 // DELETE /api/lab-requests/:id - Delete lab request
 router.delete('/:id', (req, res) => {
     labRequestsController.deleteLabRequest(req, res);

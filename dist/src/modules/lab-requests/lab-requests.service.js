@@ -31,12 +31,12 @@ class LabRequestService {
                     where.status = filter.status;
                 }
                 if (filter.dateFrom || filter.dateTo) {
-                    where.requestedDate = {};
+                    where.createdAt = {};
                     if (filter.dateFrom) {
-                        where.requestedDate.gte = filter.dateFrom;
+                        where.createdAt.gte = filter.dateFrom;
                     }
                     if (filter.dateTo) {
-                        where.requestedDate.lte = filter.dateTo;
+                        where.createdAt.lte = filter.dateTo;
                     }
                 }
                 const labRequests = yield prisma.labRequest.findMany({
@@ -174,45 +174,19 @@ class LabRequestService {
         });
     }
     // Update lab request status
-    updateLabRequestStatus(id, status, notes) {
+    updateLabRequestStatus(id, status, note) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const updateData = { status };
-                // Set appropriate date based on status
-                if (status === 'APPROVED') {
-                    updateData.approvedDate = new Date();
-                }
-                else if (status === 'COMPLETED') {
-                    updateData.completedDate = new Date();
-                }
-                if (notes) {
-                    updateData.notes = notes;
+                // Add note if provided
+                if (note) {
+                    updateData.note = note;
                 }
                 return yield this.updateLabRequest(id, updateData);
             }
             catch (error) {
                 console.error('Error updating lab request status:', error);
                 throw new Error(error instanceof Error ? error.message : 'Failed to update lab request status');
-            }
-        });
-    }
-    // Add test results to lab request
-    addTestResults(id, testResults, attachments) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const updateData = {
-                    testResults,
-                    status: 'COMPLETED',
-                    completedDate: new Date()
-                };
-                if (attachments && Array.isArray(attachments)) {
-                    updateData.attachments = attachments;
-                }
-                return yield this.updateLabRequest(id, updateData);
-            }
-            catch (error) {
-                console.error('Error adding test results:', error);
-                throw new Error(error instanceof Error ? error.message : 'Failed to add test results');
             }
         });
     }
