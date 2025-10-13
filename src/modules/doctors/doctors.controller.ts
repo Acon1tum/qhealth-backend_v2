@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
-import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient, Role, AuditCategory, AuditLevel } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { securityConfig } from '../../config/security.config';
 import { AuthService } from '../../shared/services/auth.service';
+import { AuditService } from '../audit/audit.service';
 import { IUserProfile } from '../../types';
 
 const prisma = new PrismaClient();
@@ -73,6 +74,26 @@ export class DoctorsController {
         }),
       ]);
 
+      // Audit log for successful access
+      const userId = (req as any).user?.id || 'anonymous';
+      await AuditService.logDataAccess(
+        'LIST_DOCTORS',
+        userId,
+        'DOCTOR',
+        'list',
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          page: page,
+          limit: limit,
+          search: search,
+          organizationId: organizationId,
+          totalResults: total,
+          userRole: (req as any).user?.role,
+          auditDescription: `Listed ${total} doctors (page ${page}/${Math.ceil(total / limit) || 1})`
+        }
+      );
+
       res.json({
         success: true,
         data: {
@@ -85,6 +106,32 @@ export class DoctorsController {
       });
     } catch (error) {
       console.error('Error listing doctors:', error);
+      
+      // Audit log for failure
+      try {
+        const userId = (req as any).user?.id || 'anonymous';
+        const { page, limit, search, organizationId } = req.query;
+        
+        await AuditService.logSecurityEvent(
+          'DOCTORS_LIST_FAILED',
+          AuditLevel.ERROR,
+          `Failed to list doctors: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            page: page,
+            limit: limit,
+            search: search,
+            organizationId: organizationId,
+            userRole: (req as any).user?.role,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({ success: false, message: 'Failed to list doctors' });
     }
   }
@@ -114,12 +161,72 @@ export class DoctorsController {
       });
 
       if (!doctor) {
+        // Audit log for doctor not found
+        const userId = (req as any).user?.id || 'anonymous';
+        await AuditService.logSecurityEvent(
+          'DOCTOR_NOT_FOUND',
+          AuditLevel.WARNING,
+          `Doctor not found: ${id}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            requestedDoctorId: id,
+            userRole: (req as any).user?.role,
+            organizationId: (req as any).user?.organizationId
+          }
+        );
+        
         return res.status(404).json({ success: false, message: 'Doctor not found' });
       }
+
+      // Audit log for successful access
+      const userId = (req as any).user?.id || 'anonymous';
+      await AuditService.logDataAccess(
+        'VIEW_DOCTOR',
+        userId,
+        'DOCTOR',
+        id,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          doctorId: id,
+          doctorEmail: doctor.email,
+          doctorName: `${doctor.doctorInfo?.firstName} ${doctor.doctorInfo?.lastName}`,
+          specialization: doctor.doctorInfo?.specialization,
+          organizationId: doctor.organizationId,
+          organizationName: doctor.organization?.name,
+          userRole: (req as any).user?.role,
+          auditDescription: `Viewed doctor profile: ${doctor.email}`
+        }
+      );
 
       res.json({ success: true, data: doctor });
     } catch (error) {
       console.error('Error fetching doctor:', error);
+      
+      // Audit log for failure
+      try {
+        const { id } = req.params;
+        const userId = (req as any).user?.id || 'anonymous';
+        
+        await AuditService.logSecurityEvent(
+          'DOCTOR_FETCH_FAILED',
+          AuditLevel.ERROR,
+          `Failed to fetch doctor: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            doctorId: id,
+            userRole: (req as any).user?.role,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({ success: false, message: 'Failed to fetch doctor' });
     }
   }
@@ -191,9 +298,78 @@ export class DoctorsController {
         select: { id: true, email: true, organizationId: true },
       });
 
+      // Audit log for successful creation
+      const userId = (req as any).user?.id || 'system';
+      await AuditService.logDataModification(
+        'CREATE',
+        userId,
+        'DOCTOR',
+        user.id.toString(),
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          doctorId: user.id,
+          email: email,
+          organizationId: finalOrganizationId,
+          firstName: firstName,
+          middleName: middleName,
+          lastName: lastName,
+          specialization: specialization,
+          qualifications: qualifications,
+          experience: experience,
+          contactNumber: contactNumber,
+          address: address,
+          bio: bio,
+          createdBy: userId,
+          createdByRole: (req as any).user?.role,
+          auditDescription: `Doctor created: ${email}`
+        }
+      );
+
       res.status(201).json({ success: true, data: user, message: 'Doctor created successfully' });
     } catch (error) {
       console.error('Error creating doctor:', error);
+      
+      // Audit log for failure
+      try {
+        const {
+          email,
+          organizationId,
+          firstName,
+          middleName,
+          lastName,
+          specialization,
+          qualifications,
+          experience,
+          contactNumber,
+          address,
+          bio
+        } = req.body || {};
+        const userId = (req as any).user?.id || 'system';
+        
+        await AuditService.logSecurityEvent(
+          'DOCTOR_CREATION_FAILED',
+          AuditLevel.ERROR,
+          `Failed to create doctor: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            email: email,
+            organizationId: organizationId,
+            firstName: firstName,
+            lastName: lastName,
+            specialization: specialization,
+            experience: experience,
+            createdBy: userId,
+            createdByRole: (req as any).user?.role,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       const message = (error as any)?.message || 'Failed to create doctor';
       // Handle Prisma unique constraint errors gracefully
       if (message.includes('Unique constraint') || message.includes('Unique constraint failed')) {
@@ -227,8 +403,47 @@ export class DoctorsController {
         whereClause.organizationId = (req.user as any).organizationId;
       }
 
-      const user = await prisma.user.findFirst({ where: whereClause, select: { id: true } });
-      if (!user) return res.status(404).json({ success: false, message: 'Doctor not found' });
+      const user = await prisma.user.findFirst({ 
+        where: whereClause, 
+        select: { 
+          id: true,
+          email: true,
+          organizationId: true,
+          doctorInfo: {
+            select: {
+              firstName: true,
+              middleName: true,
+              lastName: true,
+              specialization: true,
+              qualifications: true,
+              experience: true,
+              contactNumber: true,
+              address: true,
+              bio: true
+            }
+          }
+        } 
+      });
+      
+      if (!user) {
+        // Audit log for doctor not found
+        const userId = (req as any).user?.id || 'anonymous';
+        await AuditService.logSecurityEvent(
+          'DOCTOR_UPDATE_NOT_FOUND',
+          AuditLevel.WARNING,
+          `Doctor not found for update: ${id}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            requestedDoctorId: id,
+            userRole: (req as any).user?.role,
+            organizationId: (req as any).user?.organizationId
+          }
+        );
+        
+        return res.status(404).json({ success: false, message: 'Doctor not found' });
+      }
 
       // If user is admin, they cannot change the organization
       const updateData: any = {};
@@ -274,9 +489,88 @@ export class DoctorsController {
         select: { id: true },
       });
 
+      // Audit log for successful update
+      const userId = (req as any).user?.id || 'system';
+      await AuditService.logDataModification(
+        'UPDATE',
+        userId,
+        'DOCTOR',
+        id,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          doctorId: id,
+          doctorEmail: user.email,
+          oldOrganizationId: user.organizationId,
+          newOrganizationId: organizationId,
+          oldFirstName: user.doctorInfo?.firstName,
+          newFirstName: firstName,
+          oldMiddleName: user.doctorInfo?.middleName,
+          newMiddleName: middleName,
+          oldLastName: user.doctorInfo?.lastName,
+          newLastName: lastName,
+          oldSpecialization: user.doctorInfo?.specialization,
+          newSpecialization: specialization,
+          oldQualifications: user.doctorInfo?.qualifications,
+          newQualifications: qualifications,
+          oldExperience: user.doctorInfo?.experience,
+          newExperience: experience,
+          oldContactNumber: user.doctorInfo?.contactNumber,
+          newContactNumber: contactNumber,
+          oldAddress: user.doctorInfo?.address,
+          newAddress: address,
+          oldBio: user.doctorInfo?.bio,
+          newBio: bio,
+          updatedBy: userId,
+          updatedByRole: (req as any).user?.role,
+          auditDescription: `Doctor updated: ${user.email}`
+        }
+      );
+
       res.json({ success: true, data: updated, message: 'Doctor updated successfully' });
     } catch (error) {
       console.error('Error updating doctor:', error);
+      
+      // Audit log for failure
+      try {
+        const { id } = req.params;
+        const {
+          organizationId,
+          firstName,
+          middleName,
+          lastName,
+          specialization,
+          qualifications,
+          experience,
+          contactNumber,
+          address,
+          bio
+        } = req.body || {};
+        const userId = (req as any).user?.id || 'system';
+        
+        await AuditService.logSecurityEvent(
+          'DOCTOR_UPDATE_FAILED',
+          AuditLevel.ERROR,
+          `Failed to update doctor: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            doctorId: id,
+            organizationId: organizationId,
+            firstName: firstName,
+            lastName: lastName,
+            specialization: specialization,
+            experience: experience,
+            updatedBy: userId,
+            updatedByRole: (req as any).user?.role,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({ success: false, message: 'Failed to update doctor' });
     }
   }
@@ -293,8 +587,47 @@ export class DoctorsController {
         whereClause.organizationId = (req.user as any).organizationId;
       }
       
-      const user = await prisma.user.findFirst({ where: whereClause, select: { id: true } });
-      if (!user) return res.status(404).json({ success: false, message: 'Doctor not found' });
+      const user = await prisma.user.findFirst({ 
+        where: whereClause, 
+        select: { 
+          id: true,
+          email: true,
+          organizationId: true,
+          doctorInfo: {
+            select: {
+              firstName: true,
+              middleName: true,
+              lastName: true,
+              specialization: true,
+              qualifications: true,
+              experience: true,
+              contactNumber: true,
+              address: true,
+              bio: true
+            }
+          }
+        } 
+      });
+      
+      if (!user) {
+        // Audit log for doctor not found
+        const userId = (req as any).user?.id || 'anonymous';
+        await AuditService.logSecurityEvent(
+          'DOCTOR_DELETE_NOT_FOUND',
+          AuditLevel.WARNING,
+          `Doctor not found for deletion: ${id}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            requestedDoctorId: id,
+            userRole: (req as any).user?.role,
+            organizationId: (req as any).user?.organizationId
+          }
+        );
+        
+        return res.status(404).json({ success: false, message: 'Doctor not found' });
+      }
 
       // Clean up related records with safe order
       await prisma.$transaction([
@@ -307,9 +640,70 @@ export class DoctorsController {
         prisma.user.delete({ where: { id } }),
       ]);
 
+      // Audit log for successful deletion
+      const userId = (req as any).user?.id || 'system';
+      await AuditService.logDataModification(
+        'DELETE',
+        userId,
+        'DOCTOR',
+        id,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          doctorId: id,
+          doctorEmail: user.email,
+          organizationId: user.organizationId,
+          firstName: user.doctorInfo?.firstName,
+          middleName: user.doctorInfo?.middleName,
+          lastName: user.doctorInfo?.lastName,
+          specialization: user.doctorInfo?.specialization,
+          qualifications: user.doctorInfo?.qualifications,
+          experience: user.doctorInfo?.experience,
+          contactNumber: user.doctorInfo?.contactNumber,
+          address: user.doctorInfo?.address,
+          bio: user.doctorInfo?.bio,
+          deletedAt: new Date(),
+          deletedBy: userId,
+          deletedByRole: (req as any).user?.role,
+          relatedRecordsDeleted: {
+            consultations: true,
+            appointments: true,
+            prescriptions: true,
+            diagnoses: true,
+            schedules: true,
+            doctorInfo: true
+          },
+          auditDescription: `Doctor deleted: ${user.email}`
+        }
+      );
+
       res.json({ success: true, message: 'Doctor deleted successfully' });
     } catch (error) {
       console.error('Error deleting doctor:', error);
+      
+      // Audit log for failure
+      try {
+        const { id } = req.params;
+        const userId = (req as any).user?.id || 'system';
+        
+        await AuditService.logSecurityEvent(
+          'DOCTOR_DELETE_FAILED',
+          AuditLevel.ERROR,
+          `Failed to delete doctor: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            doctorId: id,
+            deletedBy: userId,
+            deletedByRole: (req as any).user?.role,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({ success: false, message: 'Failed to delete doctor' });
     }
   }

@@ -11,7 +11,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PrescriptionsController = void 0;
 const client_1 = require("@prisma/client");
-const audit_service_1 = require("../../shared/services/audit.service");
+const audit_service_1 = require("../audit/audit.service");
 const notification_service_1 = require("../notifications/notification.service");
 const prisma = new client_1.PrismaClient();
 class PrescriptionsController {
@@ -34,6 +34,13 @@ class PrescriptionsController {
                     },
                     orderBy: { id: 'asc' }
                 });
+                // Audit log for successful access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_AVAILABLE_PATIENTS', doctorId, 'PATIENT', 'list', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    doctorId: doctorId,
+                    totalPatients: patients.length,
+                    userRole: 'DOCTOR',
+                    auditDescription: `Doctor viewed ${patients.length} available patients for prescription`
+                });
                 res.status(200).json({
                     success: true,
                     message: 'Available patients retrieved successfully',
@@ -52,6 +59,18 @@ class PrescriptionsController {
             }
             catch (error) {
                 console.error('Error getting available patients:', error);
+                // Audit log for failure
+                try {
+                    const doctorId = req.user.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('AVAILABLE_PATIENTS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch available patients: ${error instanceof Error ? error.message : 'Unknown error'}`, doctorId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        doctorId: doctorId,
+                        userRole: 'DOCTOR',
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Internal server error',
@@ -80,12 +99,26 @@ class PrescriptionsController {
                     where: { userId: userId }
                 });
                 if (!patientInfo) {
+                    // Audit log for patient not found
+                    yield audit_service_1.AuditService.logSecurityEvent('PATIENT_INFO_NOT_FOUND', client_1.AuditLevel.WARNING, `Patient info not found: ${userId}`, doctorId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedUserId: userId,
+                        doctorId: doctorId,
+                        userRole: 'DOCTOR'
+                    });
                     res.status(404).json({
                         success: false,
                         message: 'Patient not found'
                     });
                     return;
                 }
+                // Audit log for successful access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_PATIENT_INFO', doctorId, 'PATIENT', userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    requestedUserId: userId,
+                    doctorId: doctorId,
+                    patientName: patientInfo.fullName,
+                    userRole: 'DOCTOR',
+                    auditDescription: `Doctor viewed patient info for user ${userId}`
+                });
                 res.status(200).json({
                     success: true,
                     message: 'Patient info retrieved successfully',
@@ -94,6 +127,20 @@ class PrescriptionsController {
             }
             catch (error) {
                 console.error('Error getting patient info:', error);
+                // Audit log for failure
+                try {
+                    const userId = req.params.userId;
+                    const doctorId = req.user.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('PATIENT_INFO_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch patient info: ${error instanceof Error ? error.message : 'Unknown error'}`, doctorId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedUserId: userId,
+                        doctorId: doctorId,
+                        userRole: 'DOCTOR',
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Internal server error',
@@ -105,6 +152,7 @@ class PrescriptionsController {
     // Create a new prescription
     createPrescription(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a;
             try {
                 const doctorId = req.user.id;
                 const { patientId, consultationId, medicationName, dosage, frequency, duration, instructions, quantity, refills = 0, expiresAt, notes } = req.body;
@@ -168,10 +216,23 @@ class PrescriptionsController {
                     }
                 });
                 // Log audit event
-                yield audit_service_1.AuditService.logUserActivity(doctorId, 'CREATE_PRESCRIPTION', 'DATA_MODIFICATION', `Doctor created prescription for patient ${patientId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'PRESCRIPTION', prescription.id.toString(), {
-                    medicationName,
+                yield audit_service_1.AuditService.logDataModification('CREATE', doctorId, 'PRESCRIPTION', prescription.id.toString(), req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    prescriptionId: prescription.id,
                     patientId: patientId,
-                    consultationId: consultationId ? consultationId : null
+                    doctorId: doctorId,
+                    consultationId: consultationId ? consultationId : null,
+                    medicationName: medicationName,
+                    dosage: dosage,
+                    frequency: frequency,
+                    duration: duration,
+                    instructions: instructions,
+                    quantity: quantity ? parseInt(quantity) : null,
+                    refills: parseInt(refills),
+                    expiresAt: expiresAt ? new Date(expiresAt) : null,
+                    notes: notes,
+                    patientName: (_a = patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName,
+                    doctorName: prescription.doctor.doctorInfo ? `${prescription.doctor.doctorInfo.firstName} ${prescription.doctor.doctorInfo.lastName}` : prescription.doctor.email,
+                    auditDescription: `Prescription created for patient ${patientId}: ${medicationName}`
                 });
                 // Send notification to patient
                 yield notification_service_1.NotificationService.notifyPrescriptionIssued(prescription.id, patientId, doctorId, medicationName);
@@ -183,6 +244,29 @@ class PrescriptionsController {
             }
             catch (error) {
                 console.error('Error creating prescription:', error);
+                // Audit log for failure
+                try {
+                    const doctorId = req.user.id;
+                    const { patientId, consultationId, medicationName, dosage, frequency, duration, instructions, quantity, refills, expiresAt, notes } = req.body;
+                    yield audit_service_1.AuditService.logSecurityEvent('PRESCRIPTION_CREATION_FAILED', client_1.AuditLevel.ERROR, `Failed to create prescription: ${error instanceof Error ? error.message : 'Unknown error'}`, doctorId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        doctorId: doctorId,
+                        patientId: patientId,
+                        consultationId: consultationId,
+                        medicationName: medicationName,
+                        dosage: dosage,
+                        frequency: frequency,
+                        duration: duration,
+                        instructions: instructions,
+                        quantity: quantity,
+                        refills: refills,
+                        expiresAt: expiresAt,
+                        notes: notes,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Internal server error',
@@ -194,6 +278,7 @@ class PrescriptionsController {
     // Get prescriptions for a specific patient
     getPatientPrescriptions(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a;
             try {
                 const userId = req.user.id;
                 const userRole = req.user.role;
@@ -204,6 +289,12 @@ class PrescriptionsController {
                     include: { patientInfo: true }
                 });
                 if (!patient || patient.role !== 'PATIENT') {
+                    // Audit log for patient not found
+                    yield audit_service_1.AuditService.logSecurityEvent('PATIENT_NOT_FOUND_FOR_PRESCRIPTIONS', client_1.AuditLevel.WARNING, `Patient not found for prescriptions: ${patientId}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedPatientId: patientId,
+                        requestingUserId: userId,
+                        userRole: userRole
+                    });
                     res.status(404).json({
                         success: false,
                         message: 'Patient not found'
@@ -228,6 +319,15 @@ class PrescriptionsController {
                         consultation: true
                     },
                     orderBy: { prescribedAt: 'desc' }
+                });
+                // Audit log for successful access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_PATIENT_PRESCRIPTIONS', userId, 'PRESCRIPTION', patientId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    patientId: patientId,
+                    patientName: (_a = patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName,
+                    totalPrescriptions: prescriptions.length,
+                    requestingUserId: userId,
+                    userRole: userRole,
+                    auditDescription: `Viewed ${prescriptions.length} prescriptions for patient ${patientId}`
                 });
                 res.status(200).json({
                     success: true,
@@ -257,6 +357,12 @@ class PrescriptionsController {
                     include: { doctorInfo: true }
                 });
                 if (!doctor || doctor.role !== 'DOCTOR') {
+                    // Audit log for doctor not found
+                    yield audit_service_1.AuditService.logSecurityEvent('DOCTOR_NOT_FOUND_FOR_PRESCRIPTIONS', client_1.AuditLevel.WARNING, `Doctor not found for prescriptions: ${doctorId}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedDoctorId: doctorId,
+                        requestingUserId: userId,
+                        userRole: 'DOCTOR'
+                    });
                     res.status(404).json({
                         success: false,
                         message: 'Doctor not found'
@@ -265,6 +371,13 @@ class PrescriptionsController {
                 }
                 // Check access permissions
                 if (userId !== doctorId) {
+                    // Audit log for unauthorized access attempt
+                    yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_DOCTOR_PRESCRIPTION_ACCESS', client_1.AuditLevel.WARNING, `Doctor attempted to access another doctor's prescriptions`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedDoctorId: doctorId,
+                        requestingUserId: userId,
+                        userRole: 'DOCTOR',
+                        accessAttempt: 'view_doctor_prescriptions'
+                    });
                     res.status(403).json({
                         success: false,
                         message: 'Access denied: You can only view your own prescriptions'
@@ -282,6 +395,15 @@ class PrescriptionsController {
                     },
                     orderBy: { prescribedAt: 'desc' }
                 });
+                // Audit log for successful access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_DOCTOR_PRESCRIPTIONS', userId, 'PRESCRIPTION', doctorId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    doctorId: doctorId,
+                    doctorName: doctor.doctorInfo ? `${doctor.doctorInfo.firstName} ${doctor.doctorInfo.lastName}` : doctor.email,
+                    totalPrescriptions: prescriptions.length,
+                    requestingUserId: userId,
+                    userRole: 'DOCTOR',
+                    auditDescription: `Doctor viewed ${prescriptions.length} prescriptions for doctor ${doctorId}`
+                });
                 res.status(200).json({
                     success: true,
                     message: 'Prescriptions retrieved successfully',
@@ -290,6 +412,20 @@ class PrescriptionsController {
             }
             catch (error) {
                 console.error('Error getting doctor prescriptions:', error);
+                // Audit log for failure
+                try {
+                    const userId = req.user.id;
+                    const doctorId = req.params.doctorId;
+                    yield audit_service_1.AuditService.logSecurityEvent('DOCTOR_PRESCRIPTIONS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch doctor prescriptions: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        doctorId: doctorId,
+                        requestingUserId: userId,
+                        userRole: 'DOCTOR',
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Internal server error',
@@ -301,6 +437,7 @@ class PrescriptionsController {
     // Get prescription by ID
     getPrescriptionById(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a;
             try {
                 const userId = req.user.id;
                 const userRole = req.user.role;
@@ -319,6 +456,12 @@ class PrescriptionsController {
                     }
                 });
                 if (!prescription) {
+                    // Audit log for prescription not found
+                    yield audit_service_1.AuditService.logSecurityEvent('PRESCRIPTION_NOT_FOUND', client_1.AuditLevel.WARNING, `Prescription not found: ${prescriptionId}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedPrescriptionId: prescriptionId,
+                        requestingUserId: userId,
+                        userRole: userRole
+                    });
                     res.status(404).json({
                         success: false,
                         message: 'Prescription not found'
@@ -327,6 +470,14 @@ class PrescriptionsController {
                 }
                 // Check access permissions
                 if (userRole === 'PATIENT' && prescription.patientId !== userId) {
+                    // Audit log for unauthorized access attempt
+                    yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_PRESCRIPTION_VIEW', client_1.AuditLevel.WARNING, `Patient attempted to view another patient's prescription`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedPrescriptionId: prescriptionId,
+                        prescriptionPatientId: prescription.patientId,
+                        requestingUserId: userId,
+                        userRole: userRole,
+                        accessAttempt: 'view_prescription'
+                    });
                     res.status(403).json({
                         success: false,
                         message: 'Access denied: You can only view your own prescriptions'
@@ -334,12 +485,33 @@ class PrescriptionsController {
                     return;
                 }
                 if (userRole === 'DOCTOR' && prescription.doctorId !== userId) {
+                    // Audit log for unauthorized access attempt
+                    yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_PRESCRIPTION_VIEW', client_1.AuditLevel.WARNING, `Doctor attempted to view another doctor's prescription`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedPrescriptionId: prescriptionId,
+                        prescriptionDoctorId: prescription.doctorId,
+                        requestingUserId: userId,
+                        userRole: userRole,
+                        accessAttempt: 'view_prescription'
+                    });
                     res.status(403).json({
                         success: false,
                         message: 'Access denied: You can only view prescriptions you created'
                     });
                     return;
                 }
+                // Audit log for successful access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_PRESCRIPTION', userId, 'PRESCRIPTION', prescriptionId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    prescriptionId: prescriptionId,
+                    patientId: prescription.patientId,
+                    doctorId: prescription.doctorId,
+                    consultationId: prescription.consultationId,
+                    medicationName: prescription.medicationName,
+                    patientName: (_a = prescription.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName,
+                    doctorName: prescription.doctor.doctorInfo ? `${prescription.doctor.doctorInfo.firstName} ${prescription.doctor.doctorInfo.lastName}` : prescription.doctor.email,
+                    requestingUserId: userId,
+                    userRole: userRole,
+                    auditDescription: `Viewed prescription: ${prescriptionId}`
+                });
                 res.status(200).json({
                     success: true,
                     message: 'Prescription retrieved successfully',
@@ -348,6 +520,21 @@ class PrescriptionsController {
             }
             catch (error) {
                 console.error('Error getting prescription:', error);
+                // Audit log for failure
+                try {
+                    const userId = req.user.id;
+                    const userRole = req.user.role;
+                    const prescriptionId = req.params.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('PRESCRIPTION_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch prescription: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        prescriptionId: prescriptionId,
+                        requestingUserId: userId,
+                        userRole: userRole,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Internal server error',
@@ -419,7 +606,33 @@ class PrescriptionsController {
                     }
                 });
                 // Log audit event
-                yield audit_service_1.AuditService.logUserActivity(doctorId, 'UPDATE_PRESCRIPTION', 'DATA_MODIFICATION', `Doctor updated prescription ${prescriptionId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'PRESCRIPTION', prescriptionId.toString(), updateFields);
+                yield audit_service_1.AuditService.logDataModification('UPDATE', doctorId, 'PRESCRIPTION', prescriptionId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    prescriptionId: prescriptionId,
+                    patientId: existingPrescription.patientId,
+                    doctorId: doctorId,
+                    oldMedicationName: existingPrescription.medicationName,
+                    newMedicationName: updateFields.medicationName,
+                    oldDosage: existingPrescription.dosage,
+                    newDosage: updateFields.dosage,
+                    oldFrequency: existingPrescription.frequency,
+                    newFrequency: updateFields.frequency,
+                    oldDuration: existingPrescription.duration,
+                    newDuration: updateFields.duration,
+                    oldInstructions: existingPrescription.instructions,
+                    newInstructions: updateFields.instructions,
+                    oldQuantity: existingPrescription.quantity,
+                    newQuantity: updateFields.quantity,
+                    oldRefills: existingPrescription.refills,
+                    newRefills: updateFields.refills,
+                    oldExpiresAt: existingPrescription.expiresAt,
+                    newExpiresAt: updateFields.expiresAt,
+                    oldNotes: existingPrescription.notes,
+                    newNotes: updateFields.notes,
+                    oldIsActive: existingPrescription.isActive,
+                    newIsActive: updateFields.isActive,
+                    updatedBy: doctorId,
+                    auditDescription: `Prescription updated: ${prescriptionId}`
+                });
                 res.status(200).json({
                     success: true,
                     message: 'Prescription updated successfully',
@@ -428,6 +641,21 @@ class PrescriptionsController {
             }
             catch (error) {
                 console.error('Error updating prescription:', error);
+                // Audit log for failure
+                try {
+                    const doctorId = req.user.id;
+                    const prescriptionId = req.params.id;
+                    const updateData = req.body;
+                    yield audit_service_1.AuditService.logSecurityEvent('PRESCRIPTION_UPDATE_FAILED', client_1.AuditLevel.ERROR, `Failed to update prescription: ${error instanceof Error ? error.message : 'Unknown error'}`, doctorId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        prescriptionId: prescriptionId,
+                        doctorId: doctorId,
+                        updateData: updateData,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Internal server error',
@@ -466,9 +694,25 @@ class PrescriptionsController {
                     where: { id: prescriptionId }
                 });
                 // Log audit event
-                yield audit_service_1.AuditService.logUserActivity(doctorId, 'DELETE_PRESCRIPTION', 'DATA_MODIFICATION', `Doctor deleted prescription ${prescriptionId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'PRESCRIPTION', prescriptionId.toString(), {
+                yield audit_service_1.AuditService.logDataModification('DELETE', doctorId, 'PRESCRIPTION', prescriptionId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    prescriptionId: prescriptionId,
+                    patientId: existingPrescription.patientId,
+                    doctorId: doctorId,
+                    consultationId: existingPrescription.consultationId,
                     medicationName: existingPrescription.medicationName,
-                    patientId: existingPrescription.patientId
+                    dosage: existingPrescription.dosage,
+                    frequency: existingPrescription.frequency,
+                    duration: existingPrescription.duration,
+                    instructions: existingPrescription.instructions,
+                    quantity: existingPrescription.quantity,
+                    refills: existingPrescription.refills,
+                    expiresAt: existingPrescription.expiresAt,
+                    notes: existingPrescription.notes,
+                    isActive: existingPrescription.isActive,
+                    prescribedAt: existingPrescription.prescribedAt,
+                    deletedBy: doctorId,
+                    deletedAt: new Date(),
+                    auditDescription: `Prescription deleted: ${prescriptionId}`
                 });
                 res.status(200).json({
                     success: true,
@@ -477,6 +721,19 @@ class PrescriptionsController {
             }
             catch (error) {
                 console.error('Error deleting prescription:', error);
+                // Audit log for failure
+                try {
+                    const doctorId = req.user.id;
+                    const prescriptionId = req.params.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('PRESCRIPTION_DELETE_FAILED', client_1.AuditLevel.ERROR, `Failed to delete prescription: ${error instanceof Error ? error.message : 'Unknown error'}`, doctorId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        prescriptionId: prescriptionId,
+                        doctorId: doctorId,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Internal server error',
@@ -501,6 +758,12 @@ class PrescriptionsController {
                     }
                 });
                 if (!consultation) {
+                    // Audit log for consultation not found
+                    yield audit_service_1.AuditService.logSecurityEvent('CONSULTATION_NOT_FOUND_FOR_PRESCRIPTIONS', client_1.AuditLevel.WARNING, `Consultation not found for prescriptions: ${consultationId}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedConsultationId: consultationId,
+                        requestingUserId: userId,
+                        userRole: userRole
+                    });
                     res.status(404).json({
                         success: false,
                         message: 'Consultation not found'
@@ -509,6 +772,14 @@ class PrescriptionsController {
                 }
                 // Check access permissions
                 if (userRole === 'PATIENT' && consultation.patientId !== userId) {
+                    // Audit log for unauthorized access attempt
+                    yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_CONSULTATION_PRESCRIPTION_ACCESS', client_1.AuditLevel.WARNING, `Patient attempted to access prescriptions from another patient's consultation`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedConsultationId: consultationId,
+                        consultationPatientId: consultation.patientId,
+                        requestingUserId: userId,
+                        userRole: userRole,
+                        accessAttempt: 'view_consultation_prescriptions'
+                    });
                     res.status(403).json({
                         success: false,
                         message: 'Access denied: You can only view prescriptions from your own consultations'
@@ -516,6 +787,14 @@ class PrescriptionsController {
                     return;
                 }
                 if (userRole === 'DOCTOR' && consultation.doctorId !== userId) {
+                    // Audit log for unauthorized access attempt
+                    yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_CONSULTATION_PRESCRIPTION_ACCESS', client_1.AuditLevel.WARNING, `Doctor attempted to access prescriptions from another doctor's consultation`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedConsultationId: consultationId,
+                        consultationDoctorId: consultation.doctorId,
+                        requestingUserId: userId,
+                        userRole: userRole,
+                        accessAttempt: 'view_consultation_prescriptions'
+                    });
                     res.status(403).json({
                         success: false,
                         message: 'Access denied: You can only view prescriptions from your own consultations'
@@ -536,6 +815,16 @@ class PrescriptionsController {
                     },
                     orderBy: { prescribedAt: 'desc' }
                 });
+                // Audit log for successful access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_CONSULTATION_PRESCRIPTIONS', userId, 'PRESCRIPTION', consultationId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    consultationId: consultationId,
+                    patientId: consultation.patientId,
+                    doctorId: consultation.doctorId,
+                    totalPrescriptions: prescriptions.length,
+                    requestingUserId: userId,
+                    userRole: userRole,
+                    auditDescription: `Viewed ${prescriptions.length} prescriptions for consultation ${consultationId}`
+                });
                 res.status(200).json({
                     success: true,
                     message: 'Consultation prescriptions retrieved successfully',
@@ -544,6 +833,21 @@ class PrescriptionsController {
             }
             catch (error) {
                 console.error('Error getting consultation prescriptions:', error);
+                // Audit log for failure
+                try {
+                    const userId = req.user.id;
+                    const userRole = req.user.role;
+                    const consultationId = req.params.consultationId;
+                    yield audit_service_1.AuditService.logSecurityEvent('CONSULTATION_PRESCRIPTIONS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch consultation prescriptions: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        consultationId: consultationId,
+                        requestingUserId: userId,
+                        userRole: userRole,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Internal server error',

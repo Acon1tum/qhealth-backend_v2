@@ -13,7 +13,7 @@ exports.LabRequestsController = void 0;
 const client_1 = require("@prisma/client");
 const lab_requests_service_js_1 = require("./lab-requests.service.js");
 const auth_service_1 = require("../../shared/services/auth.service");
-const audit_service_1 = require("../../shared/services/audit.service");
+const audit_service_1 = require("../audit/audit.service");
 const notification_service_1 = require("../notifications/notification.service");
 const prisma = new client_1.PrismaClient();
 const labRequestService = new lab_requests_service_js_1.LabRequestService();
@@ -23,6 +23,7 @@ class LabRequestsController {
     // Get all lab requests with optional filtering
     getLabRequests(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const { patientId, doctorId, organizationId, status, dateFrom, dateTo } = req.query;
                 // Build filter object
@@ -64,10 +65,41 @@ class LabRequestsController {
                             ? `${doctor.doctorInfo.firstName} ${doctor.doctorInfo.lastName}`
                             : 'Unknown Doctor', organizationName: (organization === null || organization === void 0 ? void 0 : organization.name) || 'Unknown Organization' });
                 })));
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'anonymous';
+                yield audit_service_1.AuditService.logDataAccess('LIST_LAB_REQUESTS', userId, 'LAB_REQUEST', 'list', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    patientId: patientId,
+                    doctorId: doctorId,
+                    organizationId: organizationId,
+                    status: status,
+                    dateFrom: dateFrom,
+                    dateTo: dateTo,
+                    resultCount: labRequestsWithNames.length,
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `Listed ${labRequestsWithNames.length} lab requests`
+                });
                 res.json(labRequestsWithNames);
             }
             catch (error) {
                 console.error('Error fetching lab requests:', error);
+                // Audit log for failure
+                try {
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'anonymous';
+                    const { patientId, doctorId, organizationId, status, dateFrom, dateTo } = req.query;
+                    yield audit_service_1.AuditService.logSecurityEvent('LAB_REQUESTS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch lab requests: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        patientId: patientId,
+                        doctorId: doctorId,
+                        organizationId: organizationId,
+                        status: status,
+                        dateFrom: dateFrom,
+                        dateTo: dateTo,
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch lab requests',
@@ -79,11 +111,17 @@ class LabRequestsController {
     // Get lab request by ID
     getLabRequestById(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a;
+            var _a, _b, _c, _d, _e, _f, _g;
             try {
                 const { id } = req.params;
                 const labRequest = yield labRequestService.getLabRequestById(id);
                 if (!labRequest) {
+                    // Audit log for lab request not found
+                    const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'anonymous';
+                    yield audit_service_1.AuditService.logSecurityEvent('LAB_REQUEST_NOT_FOUND', client_1.AuditLevel.WARNING, `Lab request not found: ${id}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedLabRequestId: id,
+                        userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role
+                    });
                     res.status(404).json({
                         success: false,
                         message: 'Lab request not found'
@@ -104,13 +142,41 @@ class LabRequestsController {
                         where: { id: labRequest.organizationId }
                     })
                 ]);
-                const labRequestWithNames = Object.assign(Object.assign({}, labRequest), { patientName: ((_a = patient === null || patient === void 0 ? void 0 : patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName) || 'Unknown Patient', doctorName: (doctor === null || doctor === void 0 ? void 0 : doctor.doctorInfo)
+                const labRequestWithNames = Object.assign(Object.assign({}, labRequest), { patientName: ((_c = patient === null || patient === void 0 ? void 0 : patient.patientInfo) === null || _c === void 0 ? void 0 : _c.fullName) || 'Unknown Patient', doctorName: (doctor === null || doctor === void 0 ? void 0 : doctor.doctorInfo)
                         ? `${doctor.doctorInfo.firstName} ${doctor.doctorInfo.lastName}`
                         : 'Unknown Doctor', organizationName: (organization === null || organization === void 0 ? void 0 : organization.name) || 'Unknown Organization' });
+                // Audit log for successful access
+                const userId = ((_d = req.user) === null || _d === void 0 ? void 0 : _d.id) || 'anonymous';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_LAB_REQUEST', userId, 'LAB_REQUEST', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    labRequestId: id,
+                    patientId: labRequest.patientId,
+                    doctorId: labRequest.doctorId,
+                    organizationId: labRequest.organizationId,
+                    status: labRequest.status,
+                    priority: labRequest.priority,
+                    patientName: labRequestWithNames.patientName,
+                    doctorName: labRequestWithNames.doctorName,
+                    organizationName: labRequestWithNames.organizationName,
+                    userRole: (_e = req.user) === null || _e === void 0 ? void 0 : _e.role,
+                    auditDescription: `Viewed lab request ${id}`
+                });
                 res.json(labRequestWithNames);
             }
             catch (error) {
                 console.error('Error fetching lab request:', error);
+                // Audit log for failure
+                try {
+                    const { id } = req.params;
+                    const userId = ((_f = req.user) === null || _f === void 0 ? void 0 : _f.id) || 'anonymous';
+                    yield audit_service_1.AuditService.logSecurityEvent('LAB_REQUEST_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch lab request: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        labRequestId: id,
+                        userRole: (_g = req.user) === null || _g === void 0 ? void 0 : _g.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch lab request',
@@ -168,7 +234,19 @@ class LabRequestsController {
                 console.log('✅ Lab Request Controller - Lab request created successfully:', labRequest.id);
                 // Log audit event
                 try {
-                    yield audit_service_1.AuditService.logUserActivity(userId, 'CREATE_LAB_REQUEST', 'DATA_MODIFICATION', `Created lab request for patient ${patientId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'LAB_REQUEST', labRequest.id, { patientId, doctorId, organizationId });
+                    yield audit_service_1.AuditService.logDataModification('CREATE', userId, 'LAB_REQUEST', labRequest.id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        labRequestId: labRequest.id,
+                        patientId: patientId,
+                        doctorId: doctorId,
+                        organizationId: organizationId,
+                        note: note,
+                        priority: priority,
+                        requestedTests: requestedTests,
+                        instructions: instructions,
+                        status: 'PENDING',
+                        createdBy: userId,
+                        auditDescription: `Created lab request for patient ${patientId}`
+                    });
                     console.log('✅ Audit log created successfully');
                 }
                 catch (auditError) {
@@ -210,7 +288,12 @@ class LabRequestsController {
                 }
                 const labRequest = yield labRequestService.updateLabRequest(id, updateData);
                 // Log audit event
-                yield audit_service_1.AuditService.logUserActivity(userId, 'UPDATE_LAB_REQUEST', 'DATA_MODIFICATION', `Updated lab request ${id}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'LAB_REQUEST', id, updateData);
+                yield audit_service_1.AuditService.logDataModification('UPDATE', userId, 'LAB_REQUEST', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    labRequestId: id,
+                    updateData: updateData,
+                    updatedBy: userId,
+                    auditDescription: `Updated lab request ${id}`
+                });
                 res.json({
                     success: true,
                     message: 'Lab request updated successfully',
@@ -256,7 +339,13 @@ class LabRequestsController {
                 }
                 const labRequest = yield labRequestService.updateLabRequest(id, updateData);
                 // Log audit event
-                yield audit_service_1.AuditService.logUserActivity(userId, 'UPDATE_LAB_REQUEST_STATUS', 'DATA_MODIFICATION', `Updated lab request ${id} status to ${status}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'LAB_REQUEST', id, { status, notes });
+                yield audit_service_1.AuditService.logDataModification('UPDATE', userId, 'LAB_REQUEST', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    labRequestId: id,
+                    status: status,
+                    notes: notes,
+                    updatedBy: userId,
+                    auditDescription: `Updated lab request ${id} status to ${status}`
+                });
                 // Send notification when lab results are available
                 if (status === 'COMPLETED') {
                     yield notification_service_1.NotificationService.notifyLabResultsAvailable(id, labRequest.patientId, labRequest.doctorId);
@@ -293,7 +382,11 @@ class LabRequestsController {
                 }
                 yield labRequestService.deleteLabRequest(id);
                 // Log audit event
-                yield audit_service_1.AuditService.logUserActivity(userId, 'DELETE_LAB_REQUEST', 'DATA_MODIFICATION', `Deleted lab request ${id}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'LAB_REQUEST', id);
+                yield audit_service_1.AuditService.logDataModification('DELETE', userId, 'LAB_REQUEST', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    labRequestId: id,
+                    deletedBy: userId,
+                    auditDescription: `Deleted lab request ${id}`
+                });
                 res.json({
                     success: true,
                     message: 'Lab request deleted successfully'
@@ -312,6 +405,7 @@ class LabRequestsController {
     // Get lab requests for specific patient
     getPatientLabRequests(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const { patientId } = req.params;
                 const labRequests = yield labRequestService.getLabRequests({ patientId });
@@ -330,10 +424,31 @@ class LabRequestsController {
                             ? `${doctor.doctorInfo.firstName} ${doctor.doctorInfo.lastName}`
                             : 'Unknown Doctor', organizationName: (organization === null || organization === void 0 ? void 0 : organization.name) || 'Unknown Organization' });
                 })));
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'anonymous';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_PATIENT_LAB_REQUESTS', userId, 'LAB_REQUEST', patientId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    patientId: patientId,
+                    resultCount: labRequestsWithNames.length,
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `Viewed ${labRequestsWithNames.length} lab requests for patient ${patientId}`
+                });
                 res.json(labRequestsWithNames);
             }
             catch (error) {
                 console.error('Error fetching patient lab requests:', error);
+                // Audit log for failure
+                try {
+                    const { patientId } = req.params;
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'anonymous';
+                    yield audit_service_1.AuditService.logSecurityEvent('PATIENT_LAB_REQUESTS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch patient lab requests: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        patientId: patientId,
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch patient lab requests',
@@ -345,6 +460,7 @@ class LabRequestsController {
     // Get lab requests for specific doctor
     getDoctorLabRequests(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const { doctorId } = req.params;
                 const labRequests = yield labRequestService.getLabRequests({ doctorId });
@@ -362,10 +478,31 @@ class LabRequestsController {
                     ]);
                     return Object.assign(Object.assign({}, request), { patientName: ((_a = patient === null || patient === void 0 ? void 0 : patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName) || 'Unknown Patient', organizationName: (organization === null || organization === void 0 ? void 0 : organization.name) || 'Unknown Organization' });
                 })));
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'anonymous';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_DOCTOR_LAB_REQUESTS', userId, 'LAB_REQUEST', doctorId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    doctorId: doctorId,
+                    resultCount: labRequestsWithNames.length,
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `Viewed ${labRequestsWithNames.length} lab requests for doctor ${doctorId}`
+                });
                 res.json(labRequestsWithNames);
             }
             catch (error) {
                 console.error('Error fetching doctor lab requests:', error);
+                // Audit log for failure
+                try {
+                    const { doctorId } = req.params;
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'anonymous';
+                    yield audit_service_1.AuditService.logSecurityEvent('DOCTOR_LAB_REQUESTS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch doctor lab requests: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        doctorId: doctorId,
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch doctor lab requests',
@@ -377,10 +514,17 @@ class LabRequestsController {
     // Export lab request as PDF
     exportLabRequestAsPDF(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d, _e, _f, _g;
             try {
                 const { id } = req.params;
                 const labRequest = yield labRequestService.getLabRequestById(id);
                 if (!labRequest) {
+                    // Audit log for lab request not found
+                    const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'anonymous';
+                    yield audit_service_1.AuditService.logSecurityEvent('LAB_REQUEST_PDF_NOT_FOUND', client_1.AuditLevel.WARNING, `Lab request not found for PDF export: ${id}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedLabRequestId: id,
+                        userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role
+                    });
                     res.status(404).json({
                         success: false,
                         message: 'Lab request not found'
@@ -403,6 +547,21 @@ class LabRequestsController {
                 ]);
                 // Generate HTML for PDF
                 const html = this.generateLabRequestHTML(labRequest, patient, doctor, organization);
+                // Audit log for successful PDF export
+                const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'anonymous';
+                yield audit_service_1.AuditService.logDataAccess('EXPORT_LAB_REQUEST_PDF', userId, 'LAB_REQUEST', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    labRequestId: id,
+                    patientId: labRequest.patientId,
+                    doctorId: labRequest.doctorId,
+                    organizationId: labRequest.organizationId,
+                    status: labRequest.status,
+                    priority: labRequest.priority,
+                    patientName: ((_d = patient === null || patient === void 0 ? void 0 : patient.patientInfo) === null || _d === void 0 ? void 0 : _d.fullName) || 'Unknown Patient',
+                    doctorName: (doctor === null || doctor === void 0 ? void 0 : doctor.doctorInfo) ? `${doctor.doctorInfo.firstName} ${doctor.doctorInfo.lastName}` : 'Unknown Doctor',
+                    organizationName: (organization === null || organization === void 0 ? void 0 : organization.name) || 'Unknown Organization',
+                    userRole: (_e = req.user) === null || _e === void 0 ? void 0 : _e.role,
+                    auditDescription: `Exported lab request ${id} as PDF`
+                });
                 // Set response headers for HTML
                 res.setHeader('Content-Type', 'text/html');
                 // Send HTML that will be opened in new window for print-to-PDF
@@ -410,6 +569,19 @@ class LabRequestsController {
             }
             catch (error) {
                 console.error('Error exporting lab request PDF:', error);
+                // Audit log for failure
+                try {
+                    const { id } = req.params;
+                    const userId = ((_f = req.user) === null || _f === void 0 ? void 0 : _f.id) || 'anonymous';
+                    yield audit_service_1.AuditService.logSecurityEvent('LAB_REQUEST_PDF_EXPORT_FAILED', client_1.AuditLevel.ERROR, `Failed to export lab request PDF: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        labRequestId: id,
+                        userRole: (_g = req.user) === null || _g === void 0 ? void 0 : _g.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to export lab request PDF',

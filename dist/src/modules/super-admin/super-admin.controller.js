@@ -11,11 +11,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SuperAdminController = void 0;
 const client_1 = require("@prisma/client");
+const audit_service_1 = require("../audit/audit.service");
 const prisma = new client_1.PrismaClient();
 class SuperAdminController {
     // Get comprehensive system statistics
     getSystemStatistics(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const { timeRange = '30d' } = req.query;
                 // Calculate date range
@@ -57,6 +59,26 @@ class SuperAdminController {
                 const systemUptime = `${days_uptime}d ${hours}h ${minutes}m`;
                 // Get database size (this is a rough estimate)
                 const databaseSize = '0 MB'; // Placeholder - requires database-specific query
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'system';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_SYSTEM_STATISTICS', userId, 'SYSTEM', 'statistics', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    timeRange: timeRange,
+                    totalOrganizations: totalOrganizations,
+                    activeOrganizations: activeOrganizations,
+                    totalUsers: totalUsers,
+                    totalDoctors: totalDoctors,
+                    totalPatients: totalPatients,
+                    totalAdmins: totalAdmins,
+                    totalSuperAdmins: totalSuperAdmins,
+                    totalConsultations: totalConsultations,
+                    totalAppointments: totalAppointments,
+                    totalPrescriptions: totalPrescriptions,
+                    totalLabRequests: totalLabRequests,
+                    totalNotifications: totalNotifications,
+                    systemUptime: systemUptime,
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `System statistics viewed for time range: ${timeRange}`
+                });
                 res.json({
                     success: true,
                     data: {
@@ -89,6 +111,19 @@ class SuperAdminController {
             }
             catch (error) {
                 console.error('Error fetching system statistics:', error);
+                // Audit log for failure
+                try {
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'system';
+                    const { timeRange } = req.query;
+                    yield audit_service_1.AuditService.logSecurityEvent('SYSTEM_STATISTICS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch system statistics: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        timeRange: timeRange,
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch system statistics',
@@ -100,6 +135,7 @@ class SuperAdminController {
     // Get system health metrics
     getSystemHealth(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const startTime = Date.now();
                 // Test database connection
@@ -118,6 +154,17 @@ class SuperAdminController {
                 const memoryUsagePercent = Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100);
                 // Get CPU usage (simplified)
                 const cpuUsage = Math.round(process.cpuUsage().user / 10000);
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'system';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_SYSTEM_HEALTH', userId, 'SYSTEM', 'health', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    serverStatus: 'online',
+                    databaseStatus: databaseStatus,
+                    apiResponseTime: apiResponseTime,
+                    memoryUsage: memoryUsagePercent,
+                    cpuUsage: Math.min(cpuUsage, 100),
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `System health check performed - Database: ${databaseStatus}, Response time: ${apiResponseTime}ms`
+                });
                 res.json({
                     success: true,
                     data: {
@@ -134,6 +181,17 @@ class SuperAdminController {
             }
             catch (error) {
                 console.error('Error fetching system health:', error);
+                // Audit log for failure
+                try {
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'system';
+                    yield audit_service_1.AuditService.logSecurityEvent('SYSTEM_HEALTH_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch system health: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch system health',
@@ -145,6 +203,7 @@ class SuperAdminController {
     // Get organizations with detailed statistics
     getOrganizationsWithStats(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const organizations = yield prisma.organization.findMany({
                     include: {
@@ -203,6 +262,17 @@ class SuperAdminController {
                         updatedAt: org.updatedAt.toISOString()
                     };
                 })));
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'system';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_ORGANIZATIONS_WITH_STATS', userId, 'ORGANIZATION', 'list_with_stats', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    totalOrganizations: organizationsWithStats.length,
+                    totalUsers: organizationsWithStats.reduce((sum, org) => sum + org.userCount, 0),
+                    totalDoctors: organizationsWithStats.reduce((sum, org) => sum + org.doctorCount, 0),
+                    totalPatients: organizationsWithStats.reduce((sum, org) => sum + org.patientCount, 0),
+                    totalConsultations: organizationsWithStats.reduce((sum, org) => sum + org.consultationCount, 0),
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `Organizations with stats viewed - ${organizationsWithStats.length} organizations`
+                });
                 res.json({
                     success: true,
                     data: organizationsWithStats
@@ -210,6 +280,17 @@ class SuperAdminController {
             }
             catch (error) {
                 console.error('Error fetching organizations with stats:', error);
+                // Audit log for failure
+                try {
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'system';
+                    yield audit_service_1.AuditService.logSecurityEvent('ORGANIZATIONS_WITH_STATS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch organizations with stats: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch organizations',
@@ -221,6 +302,7 @@ class SuperAdminController {
     // Get recent system activities
     getRecentActivities(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const { limit = '20' } = req.query;
                 const limitNum = Math.min(parseInt(limit, 10), 100);
@@ -251,6 +333,16 @@ class SuperAdminController {
                         resourceId: notification.relatedId || undefined
                     };
                 });
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'system';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_RECENT_ACTIVITIES', userId, 'SYSTEM', 'recent_activities', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    limit: limitNum,
+                    totalActivities: activities.length,
+                    activityTypes: [...new Set(activities.map(a => a.type))],
+                    severityLevels: [...new Set(activities.map(a => a.severity))],
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `Recent activities viewed - ${activities.length} activities`
+                });
                 res.json({
                     success: true,
                     data: activities
@@ -258,6 +350,19 @@ class SuperAdminController {
             }
             catch (error) {
                 console.error('Error fetching recent activities:', error);
+                // Audit log for failure
+                try {
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'system';
+                    const { limit } = req.query;
+                    yield audit_service_1.AuditService.logSecurityEvent('RECENT_ACTIVITIES_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch recent activities: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        limit: limit,
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch recent activities',
@@ -269,6 +374,7 @@ class SuperAdminController {
     // Get user statistics
     getUserStatistics(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const { timeRange = '30d' } = req.query;
                 // Calculate date range
@@ -292,6 +398,17 @@ class SuperAdminController {
                 usersByRoleData.forEach(item => {
                     usersByRole[item.role] = item._count;
                 });
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'system';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_USER_STATISTICS', userId, 'USER', 'statistics', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    timeRange: timeRange,
+                    totalUsers: totalUsers,
+                    newUsers: newUsers,
+                    activeUsers: activeUsers,
+                    usersByRole: usersByRole,
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `User statistics viewed for time range: ${timeRange}`
+                });
                 res.json({
                     success: true,
                     data: {
@@ -304,6 +421,19 @@ class SuperAdminController {
             }
             catch (error) {
                 console.error('Error fetching user statistics:', error);
+                // Audit log for failure
+                try {
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'system';
+                    const { timeRange } = req.query;
+                    yield audit_service_1.AuditService.logSecurityEvent('USER_STATISTICS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch user statistics: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        timeRange: timeRange,
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch user statistics',
@@ -315,6 +445,7 @@ class SuperAdminController {
     // Security events (placeholder - would need actual security event tracking)
     getSecurityEvents(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const { limit = '10', resolved } = req.query;
                 // Placeholder response - would need actual security event tracking
@@ -345,6 +476,17 @@ class SuperAdminController {
                     const isResolved = resolved === 'true';
                     filteredEvents = mockEvents.filter(event => event.resolved === isResolved);
                 }
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'system';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_SECURITY_EVENTS', userId, 'SECURITY', 'events', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    limit: limit,
+                    resolved: resolved,
+                    totalEvents: filteredEvents.length,
+                    eventTypes: [...new Set(filteredEvents.map(e => e.eventType))],
+                    severityLevels: [...new Set(filteredEvents.map(e => e.severity))],
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `Security events viewed - ${filteredEvents.length} events`
+                });
                 res.json({
                     success: true,
                     data: filteredEvents.slice(0, parseInt(limit, 10))
@@ -352,6 +494,20 @@ class SuperAdminController {
             }
             catch (error) {
                 console.error('Error fetching security events:', error);
+                // Audit log for failure
+                try {
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'system';
+                    const { limit, resolved } = req.query;
+                    yield audit_service_1.AuditService.logSecurityEvent('SECURITY_EVENTS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch security events: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        limit: limit,
+                        resolved: resolved,
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch security events',
@@ -363,9 +519,20 @@ class SuperAdminController {
     // Resolve security event (placeholder)
     resolveSecurityEvent(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const { eventId } = req.params;
                 // Placeholder - would update actual security event in database
+                // Audit log for successful resolution
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'system';
+                yield audit_service_1.AuditService.logDataModification('UPDATE', userId, 'SECURITY', eventId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    eventId: eventId,
+                    resolved: true,
+                    resolvedAt: new Date().toISOString(),
+                    resolvedBy: userId,
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `Security event ${eventId} resolved by super admin`
+                });
                 res.json({
                     success: true,
                     data: {
@@ -378,6 +545,19 @@ class SuperAdminController {
             }
             catch (error) {
                 console.error('Error resolving security event:', error);
+                // Audit log for failure
+                try {
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'system';
+                    const { eventId } = req.params;
+                    yield audit_service_1.AuditService.logSecurityEvent('SECURITY_EVENT_RESOLVE_FAILED', client_1.AuditLevel.ERROR, `Failed to resolve security event: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        eventId: eventId,
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to resolve security event',

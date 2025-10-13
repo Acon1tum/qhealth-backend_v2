@@ -11,11 +11,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OrganizationsController = void 0;
 const client_1 = require("@prisma/client");
+const audit_service_1 = require("../audit/audit.service");
 const prisma = new client_1.PrismaClient();
 class OrganizationsController {
     // Get all organizations (with optional filtering)
     getOrganizations(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const { activeOnly } = req.query;
                 // Build where clause based on query parameters
@@ -46,6 +48,14 @@ class OrganizationsController {
                 // Transform the data to include doctorCount and patientCount
                 const transformedOrganizations = organizations.map(org => (Object.assign(Object.assign({}, org), { doctorCount: org._count.users, patientCount: 0 // We'll calculate this separately if needed
                  })));
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'anonymous';
+                yield audit_service_1.AuditService.logDataAccess('LIST_ORGANIZATIONS', userId, 'ORGANIZATION', 'list', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    activeOnly: activeOnly,
+                    totalOrganizations: transformedOrganizations.length,
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `Listed ${transformedOrganizations.length} organizations`
+                });
                 res.json({
                     success: true,
                     data: transformedOrganizations
@@ -53,6 +63,19 @@ class OrganizationsController {
             }
             catch (error) {
                 console.error('Error fetching organizations:', error);
+                // Audit log for failure
+                try {
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'anonymous';
+                    const { activeOnly } = req.query;
+                    yield audit_service_1.AuditService.logSecurityEvent('ORGANIZATIONS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch organizations: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        activeOnly: activeOnly,
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch organizations',
@@ -64,6 +87,7 @@ class OrganizationsController {
     // Get organization by ID
     getOrganizationById(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d, _e, _f;
             try {
                 const { id } = req.params;
                 // Validate UUID format
@@ -87,11 +111,26 @@ class OrganizationsController {
                     }
                 });
                 if (!organization) {
+                    // Audit log for organization not found
+                    const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'anonymous';
+                    yield audit_service_1.AuditService.logSecurityEvent('ORGANIZATION_NOT_FOUND', client_1.AuditLevel.WARNING, `Organization not found: ${id}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedOrganizationId: id,
+                        userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role
+                    });
                     return res.status(404).json({
                         success: false,
                         message: 'Organization not found'
                     });
                 }
+                // Audit log for successful access
+                const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'anonymous';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_ORGANIZATION', userId, 'ORGANIZATION', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    organizationId: id,
+                    organizationName: organization.name,
+                    organizationEmail: organization.email,
+                    userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                    auditDescription: `Viewed organization: ${organization.name}`
+                });
                 res.json({
                     success: true,
                     data: organization
@@ -99,6 +138,19 @@ class OrganizationsController {
             }
             catch (error) {
                 console.error('Error fetching organization:', error);
+                // Audit log for failure
+                try {
+                    const { id } = req.params;
+                    const userId = ((_e = req.user) === null || _e === void 0 ? void 0 : _e.id) || 'anonymous';
+                    yield audit_service_1.AuditService.logSecurityEvent('ORGANIZATION_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch organization: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        organizationId: id,
+                        userRole: (_f = req.user) === null || _f === void 0 ? void 0 : _f.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch organization',
@@ -110,6 +162,7 @@ class OrganizationsController {
     // Get doctors by organization
     getDoctorsByOrganization(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 const { organizationId } = req.params;
                 // Validate UUID format
@@ -152,6 +205,14 @@ class OrganizationsController {
                         organizationId: organizationId
                     });
                 });
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'anonymous';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_DOCTORS_BY_ORGANIZATION', userId, 'ORGANIZATION', organizationId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    organizationId: organizationId,
+                    doctorCount: formattedDoctors.length,
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `Viewed ${formattedDoctors.length} doctors for organization ${organizationId}`
+                });
                 res.json({
                     success: true,
                     data: formattedDoctors
@@ -159,6 +220,19 @@ class OrganizationsController {
             }
             catch (error) {
                 console.error('Error fetching doctors by organization:', error);
+                // Audit log for failure
+                try {
+                    const { organizationId } = req.params;
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'anonymous';
+                    yield audit_service_1.AuditService.logSecurityEvent('DOCTORS_BY_ORGANIZATION_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch doctors by organization: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        organizationId: organizationId,
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch doctors',
@@ -170,6 +244,7 @@ class OrganizationsController {
     // Create new organization
     createOrganization(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             try {
                 const { name, description, address, phone, email, website } = req.body;
                 // Validate required fields
@@ -212,6 +287,20 @@ class OrganizationsController {
                         updatedAt: true
                     }
                 });
+                // Audit log for successful creation
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'system';
+                yield audit_service_1.AuditService.logDataModification('CREATE', userId, 'ORGANIZATION', organization.id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    organizationId: organization.id,
+                    organizationName: organization.name,
+                    organizationDescription: organization.description,
+                    organizationAddress: organization.address,
+                    organizationPhone: organization.phone,
+                    organizationEmail: organization.email,
+                    organizationWebsite: organization.website,
+                    isActive: organization.isActive,
+                    createdBy: userId,
+                    auditDescription: `Organization created: ${organization.name}`
+                });
                 res.status(201).json({
                     success: true,
                     data: organization,
@@ -220,6 +309,24 @@ class OrganizationsController {
             }
             catch (error) {
                 console.error('Error creating organization:', error);
+                // Audit log for failure
+                try {
+                    const { name, description, address, phone, email, website } = req.body;
+                    const userId = ((_b = req.user) === null || _b === void 0 ? void 0 : _b.id) || 'system';
+                    yield audit_service_1.AuditService.logSecurityEvent('ORGANIZATION_CREATION_FAILED', client_1.AuditLevel.ERROR, `Failed to create organization: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        organizationName: name,
+                        organizationDescription: description,
+                        organizationAddress: address,
+                        organizationPhone: phone,
+                        organizationEmail: email,
+                        organizationWebsite: website,
+                        createdBy: userId,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to create organization',
@@ -231,6 +338,7 @@ class OrganizationsController {
     // Update organization
     updateOrganization(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             try {
                 const { id } = req.params;
                 const { name, description, address, phone, email, website, isActive } = req.body;
@@ -283,6 +391,27 @@ class OrganizationsController {
                         updatedAt: true
                     }
                 });
+                // Audit log for successful update
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'system';
+                yield audit_service_1.AuditService.logDataModification('UPDATE', userId, 'ORGANIZATION', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    organizationId: id,
+                    organizationName: organization.name,
+                    oldOrganizationName: existingOrg.name,
+                    oldOrganizationDescription: existingOrg.description,
+                    newOrganizationDescription: organization.description,
+                    oldOrganizationAddress: existingOrg.address,
+                    newOrganizationAddress: organization.address,
+                    oldOrganizationPhone: existingOrg.phone,
+                    newOrganizationPhone: organization.phone,
+                    oldOrganizationEmail: existingOrg.email,
+                    newOrganizationEmail: organization.email,
+                    oldOrganizationWebsite: existingOrg.website,
+                    newOrganizationWebsite: organization.website,
+                    oldIsActive: existingOrg.isActive,
+                    newIsActive: organization.isActive,
+                    updatedBy: userId,
+                    auditDescription: `Organization updated: ${organization.name}`
+                });
                 res.json({
                     success: true,
                     data: organization,
@@ -291,6 +420,27 @@ class OrganizationsController {
             }
             catch (error) {
                 console.error('Error updating organization:', error);
+                // Audit log for failure
+                try {
+                    const { id } = req.params;
+                    const { name, description, address, phone, email, website, isActive } = req.body;
+                    const userId = ((_b = req.user) === null || _b === void 0 ? void 0 : _b.id) || 'system';
+                    yield audit_service_1.AuditService.logSecurityEvent('ORGANIZATION_UPDATE_FAILED', client_1.AuditLevel.ERROR, `Failed to update organization: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        organizationId: id,
+                        organizationName: name,
+                        organizationDescription: description,
+                        organizationAddress: address,
+                        organizationPhone: phone,
+                        organizationEmail: email,
+                        organizationWebsite: website,
+                        isActive: isActive,
+                        updatedBy: userId,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to update organization',
@@ -302,6 +452,7 @@ class OrganizationsController {
     // Delete organization
     deleteOrganization(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             try {
                 const { id } = req.params;
                 // Validate UUID format
@@ -335,6 +486,22 @@ class OrganizationsController {
                 yield prisma.organization.delete({
                     where: { id }
                 });
+                // Audit log for successful deletion
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'system';
+                yield audit_service_1.AuditService.logDataModification('DELETE', userId, 'ORGANIZATION', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    organizationId: id,
+                    organizationName: existingOrg.name,
+                    organizationDescription: existingOrg.description,
+                    organizationAddress: existingOrg.address,
+                    organizationPhone: existingOrg.phone,
+                    organizationEmail: existingOrg.email,
+                    organizationWebsite: existingOrg.website,
+                    isActive: existingOrg.isActive,
+                    createdAt: existingOrg.createdAt,
+                    deletedBy: userId,
+                    deletedAt: new Date(),
+                    auditDescription: `Organization deleted: ${existingOrg.name}`
+                });
                 res.json({
                     success: true,
                     message: 'Organization deleted successfully'
@@ -342,6 +509,19 @@ class OrganizationsController {
             }
             catch (error) {
                 console.error('Error deleting organization:', error);
+                // Audit log for failure
+                try {
+                    const { id } = req.params;
+                    const userId = ((_b = req.user) === null || _b === void 0 ? void 0 : _b.id) || 'system';
+                    yield audit_service_1.AuditService.logSecurityEvent('ORGANIZATION_DELETE_FAILED', client_1.AuditLevel.ERROR, `Failed to delete organization: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        organizationId: id,
+                        deletedBy: userId,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to delete organization',
@@ -353,6 +533,7 @@ class OrganizationsController {
     // Toggle organization status
     toggleOrganizationStatus(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             try {
                 const { id } = req.params;
                 const { isActive } = req.body;
@@ -390,6 +571,17 @@ class OrganizationsController {
                         updatedAt: true
                     }
                 });
+                // Audit log for successful status change
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'system';
+                yield audit_service_1.AuditService.logDataModification('UPDATE', userId, 'ORGANIZATION', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    organizationId: id,
+                    organizationName: organization.name,
+                    oldIsActive: existingOrg.isActive,
+                    newIsActive: organization.isActive,
+                    statusChange: isActive ? 'ACTIVATED' : 'DEACTIVATED',
+                    updatedBy: userId,
+                    auditDescription: `Organization ${isActive ? 'activated' : 'deactivated'}: ${organization.name}`
+                });
                 res.json({
                     success: true,
                     data: organization,
@@ -398,6 +590,21 @@ class OrganizationsController {
             }
             catch (error) {
                 console.error('Error toggling organization status:', error);
+                // Audit log for failure
+                try {
+                    const { id } = req.params;
+                    const { isActive } = req.body;
+                    const userId = ((_b = req.user) === null || _b === void 0 ? void 0 : _b.id) || 'system';
+                    yield audit_service_1.AuditService.logSecurityEvent('ORGANIZATION_STATUS_TOGGLE_FAILED', client_1.AuditLevel.ERROR, `Failed to toggle organization status: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        organizationId: id,
+                        isActive: isActive,
+                        updatedBy: userId,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to toggle organization status',
@@ -409,6 +616,7 @@ class OrganizationsController {
     // Get organization statistics
     getOrganizationStatistics(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d;
             try {
                 // Get total organizations
                 const totalOrganizations = yield prisma.organization.count();
@@ -424,6 +632,16 @@ class OrganizationsController {
                 const totalPatients = yield prisma.user.count({
                     where: { role: 'PATIENT' }
                 });
+                // Audit log for successful access
+                const userId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'anonymous';
+                yield audit_service_1.AuditService.logDataAccess('VIEW_ORGANIZATION_STATISTICS', userId, 'ORGANIZATION', 'statistics', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    totalOrganizations: totalOrganizations,
+                    activeOrganizations: activeOrganizations,
+                    totalDoctors: totalDoctors,
+                    totalPatients: totalPatients,
+                    userRole: (_b = req.user) === null || _b === void 0 ? void 0 : _b.role,
+                    auditDescription: `Viewed organization statistics: ${totalOrganizations} total, ${activeOrganizations} active`
+                });
                 res.json({
                     success: true,
                     data: {
@@ -436,6 +654,17 @@ class OrganizationsController {
             }
             catch (error) {
                 console.error('Error fetching organization statistics:', error);
+                // Audit log for failure
+                try {
+                    const userId = ((_c = req.user) === null || _c === void 0 ? void 0 : _c.id) || 'anonymous';
+                    yield audit_service_1.AuditService.logSecurityEvent('ORGANIZATION_STATISTICS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch organization statistics: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        userRole: (_d = req.user) === null || _d === void 0 ? void 0 : _d.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch organization statistics',

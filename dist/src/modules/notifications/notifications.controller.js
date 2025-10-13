@@ -13,6 +13,7 @@ exports.NotificationsController = void 0;
 exports.setIOInstance = setIOInstance;
 const client_1 = require("@prisma/client");
 const notification_service_1 = require("./notification.service");
+const audit_service_1 = require("../audit/audit.service");
 const prisma = new client_1.PrismaClient();
 // Helper function to get Socket.IO instance
 let ioInstance = null;
@@ -25,6 +26,7 @@ class NotificationsController {
      */
     getNotifications(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a;
             try {
                 const userId = req.user.id;
                 const { isRead, isArchived, type, priority, limit = 50, offset = 0 } = req.query;
@@ -72,6 +74,18 @@ class NotificationsController {
                         isArchived: false,
                     },
                 });
+                // Audit log for successful access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_NOTIFICATIONS', userId, 'NOTIFICATION', 'list', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    totalNotifications: total,
+                    unreadCount: unreadCount,
+                    isRead: isRead,
+                    isArchived: isArchived,
+                    type: type,
+                    priority: priority,
+                    limit: Number(limit),
+                    offset: Number(offset),
+                    auditDescription: `Viewed ${total} notifications with ${unreadCount} unread`
+                });
                 return res.status(200).json({
                     success: true,
                     data: {
@@ -88,6 +102,16 @@ class NotificationsController {
             }
             catch (error) {
                 console.error('Error fetching notifications:', error);
+                // Audit log for failure
+                try {
+                    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('NOTIFICATIONS_FETCH_FAILED', client_1.AuditLevel.ERROR, `Failed to fetch notifications: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 return res.status(500).json({
                     success: false,
                     message: 'Failed to fetch notifications',
@@ -120,11 +144,25 @@ class NotificationsController {
                     },
                 });
                 if (!notification) {
+                    // Audit log for notification not found
+                    yield audit_service_1.AuditService.logSecurityEvent('NOTIFICATION_NOT_FOUND', client_1.AuditLevel.WARNING, `Notification not found: ${id}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        notificationId: id,
+                        requestedBy: userId
+                    });
                     return res.status(404).json({
                         success: false,
                         message: 'Notification not found',
                     });
                 }
+                // Audit log for successful access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_NOTIFICATION', userId, 'NOTIFICATION', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    notificationId: id,
+                    notificationType: notification.type,
+                    notificationPriority: notification.priority,
+                    isRead: notification.isRead,
+                    isArchived: notification.isArchived,
+                    auditDescription: `Viewed notification: ${notification.title}`
+                });
                 return res.status(200).json({
                     success: true,
                     data: notification,
@@ -194,6 +232,16 @@ class NotificationsController {
                         isRead: true,
                         readAt: new Date(),
                     },
+                });
+                // Audit log for successful update
+                yield audit_service_1.AuditService.logDataModification('UPDATE', userId, 'NOTIFICATION', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    notificationId: id,
+                    oldIsRead: notification.isRead,
+                    newIsRead: true,
+                    readAt: new Date(),
+                    notificationType: notification.type,
+                    notificationTitle: notification.title,
+                    auditDescription: `Notification marked as read: ${notification.title}`
                 });
                 // Emit real-time update
                 if (ioInstance) {
@@ -409,6 +457,17 @@ class NotificationsController {
                 yield prisma.notification.delete({
                     where: { id },
                 });
+                // Audit log for successful deletion
+                yield audit_service_1.AuditService.logDataModification('DELETE', userId, 'NOTIFICATION', id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    notificationId: id,
+                    notificationType: notification.type,
+                    notificationTitle: notification.title,
+                    notificationPriority: notification.priority,
+                    wasRead: notification.isRead,
+                    wasArchived: notification.isArchived,
+                    deletedAt: new Date(),
+                    auditDescription: `Notification deleted: ${notification.title}`
+                });
                 // Emit real-time update
                 if (ioInstance) {
                     const userRoom = `user:${userId}`;
@@ -480,6 +539,15 @@ class NotificationsController {
                     title: title || 'Test Notification',
                     message: message || 'This is a test notification',
                     priority: priority || client_1.NotificationPriority.NORMAL,
+                });
+                // Audit log for successful creation
+                yield audit_service_1.AuditService.logDataModification('CREATE', userId, 'NOTIFICATION', notification.id, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    notificationId: notification.id,
+                    notificationType: notification.type,
+                    notificationTitle: notification.title,
+                    notificationPriority: notification.priority,
+                    isTestNotification: true,
+                    auditDescription: `Test notification created: ${notification.title}`
                 });
                 return res.status(201).json({
                     success: true,

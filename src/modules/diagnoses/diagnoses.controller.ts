@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { Role, DiagnosisSeverity, DiagnosisStatus } from '@prisma/client';
-import { AuditService } from '../../shared/services/audit.service';
+import { Role, DiagnosisSeverity, DiagnosisStatus, AuditCategory, AuditLevel } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { NotificationService } from '../notifications/notification.service';
 
 const prisma = new PrismaClient();
@@ -106,15 +106,32 @@ export class DiagnosesController {
       });
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'CREATE',
         doctorId,
-        'CREATE_DIAGNOSIS',
-        'DATA_MODIFICATION',
-        `Diagnosis created for patient ${diagnosis.patient.patientInfo?.fullName}: ${diagnosisName}`,
+        'DIAGNOSIS',
+        diagnosis.id.toString(),
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'DIAGNOSIS',
-        diagnosis.id.toString()
+        {
+          diagnosisId: diagnosis.id,
+          patientId: diagnosis.patientId,
+          doctorId: diagnosis.doctorId,
+          consultationId: diagnosis.consultationId,
+          diagnosisCode: diagnosis.diagnosisCode,
+          diagnosisName: diagnosis.diagnosisName,
+          description: diagnosis.description,
+          severity: diagnosis.severity,
+          status: diagnosis.status,
+          onsetDate: diagnosis.onsetDate,
+          diagnosedAt: diagnosis.diagnosedAt,
+          resolvedAt: diagnosis.resolvedAt,
+          notes: diagnosis.notes,
+          isPrimary: diagnosis.isPrimary,
+          patientName: diagnosis.patient.patientInfo?.fullName,
+          doctorName: `${diagnosis.doctor.doctorInfo?.firstName} ${diagnosis.doctor.doctorInfo?.lastName}`,
+          auditDescription: `Diagnosis created for patient ${diagnosis.patient.patientInfo?.fullName}: ${diagnosisName}`
+        }
       );
 
       // Send notification to patient
@@ -133,6 +150,50 @@ export class DiagnosesController {
 
     } catch (error) {
       console.error('Error creating diagnosis:', error);
+      
+      // Audit log for failure
+      try {
+        const {
+          patientId,
+          consultationId,
+          diagnosisCode,
+          diagnosisName,
+          description,
+          severity,
+          status,
+          onsetDate,
+          resolvedAt,
+          notes,
+          isPrimary
+        } = req.body;
+        const doctorId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'DIAGNOSIS_CREATION_FAILED',
+          AuditLevel.ERROR,
+          `Failed to create diagnosis: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          doctorId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            patientId: patientId,
+            consultationId: consultationId,
+            diagnosisCode: diagnosisCode,
+            diagnosisName: diagnosisName,
+            description: description,
+            severity: severity,
+            status: status,
+            onsetDate: onsetDate,
+            resolvedAt: resolvedAt,
+            notes: notes,
+            isPrimary: isPrimary,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to create diagnosis',
@@ -164,6 +225,22 @@ export class DiagnosesController {
 
       // Check access permissions
       if (userRole === 'PATIENT' && userId !== patientId) {
+        // Audit log for unauthorized access attempt
+        await AuditService.logSecurityEvent(
+          'UNAUTHORIZED_DIAGNOSIS_ACCESS',
+          AuditLevel.WARNING,
+          `Unauthorized attempt to access diagnoses for patient ${patientId}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            requestedPatientId: patientId,
+            requestingUserId: userId,
+            userRole: userRole,
+            accessAttempt: 'view_patient_diagnoses'
+          }
+        );
+        
         res.status(403).json({
           success: false,
           message: 'Access denied: You can only view your own diagnoses'
@@ -183,6 +260,23 @@ export class DiagnosesController {
         orderBy: { diagnosedAt: 'desc' }
       });
 
+      // Audit log for successful access
+      await AuditService.logDataAccess(
+        'VIEW_PATIENT_DIAGNOSES',
+        userId,
+        'DIAGNOSIS',
+        patientId,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          patientId: patientId,
+          patientName: patient.patientInfo?.fullName,
+          diagnosisCount: diagnoses.length,
+          userRole: userRole,
+          description: `Viewed diagnoses for patient ${patient.patientInfo?.fullName}`
+        }
+      );
+
       res.status(200).json({
         success: true,
         message: 'Diagnoses retrieved successfully',
@@ -191,6 +285,28 @@ export class DiagnosesController {
 
     } catch (error) {
       console.error('Error getting patient diagnoses:', error);
+      
+      // Audit log for failure
+      try {
+        const userId = (req as any).user.id;
+        const patientId = req.params.patientId;
+        
+        await AuditService.logSecurityEvent(
+          'PATIENT_DIAGNOSES_FETCH_FAILED',
+          AuditLevel.ERROR,
+          `Failed to fetch patient diagnoses: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            patientId: patientId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Internal server error',
@@ -216,6 +332,21 @@ export class DiagnosesController {
         orderBy: { diagnosedAt: 'desc' }
       });
 
+      // Audit log for successful access
+      await AuditService.logDataAccess(
+        'VIEW_DOCTOR_DIAGNOSES',
+        doctorId,
+        'DIAGNOSIS',
+        doctorId,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          doctorId: doctorId,
+          diagnosisCount: diagnoses.length,
+          description: `Doctor viewed their diagnoses (${diagnoses.length} total)`
+        }
+      );
+
       res.status(200).json({
         success: true,
         message: 'Diagnoses retrieved successfully',
@@ -224,6 +355,27 @@ export class DiagnosesController {
 
     } catch (error) {
       console.error('Error getting doctor diagnoses:', error);
+      
+      // Audit log for failure
+      try {
+        const doctorId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'DOCTOR_DIAGNOSES_FETCH_FAILED',
+          AuditLevel.ERROR,
+          `Failed to fetch doctor diagnoses: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          doctorId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            doctorId: doctorId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Internal server error',
@@ -301,15 +453,40 @@ export class DiagnosesController {
       });
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'UPDATE',
         doctorId,
-        'UPDATE_DIAGNOSIS',
-        'DATA_MODIFICATION',
-        `Diagnosis updated: ${diagnosisName}`,
+        'DIAGNOSIS',
+        diagnosis.id.toString(),
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'DIAGNOSIS',
-        diagnosis.id.toString()
+        {
+          diagnosisId: diagnosis.id,
+          patientId: diagnosis.patientId,
+          doctorId: diagnosis.doctorId,
+          consultationId: diagnosis.consultationId,
+          oldDiagnosisCode: existingDiagnosis.diagnosisCode,
+          newDiagnosisCode: diagnosis.diagnosisCode,
+          oldDiagnosisName: existingDiagnosis.diagnosisName,
+          newDiagnosisName: diagnosis.diagnosisName,
+          oldDescription: existingDiagnosis.description,
+          newDescription: diagnosis.description,
+          oldSeverity: existingDiagnosis.severity,
+          newSeverity: diagnosis.severity,
+          oldStatus: existingDiagnosis.status,
+          newStatus: diagnosis.status,
+          oldOnsetDate: existingDiagnosis.onsetDate,
+          newOnsetDate: diagnosis.onsetDate,
+          oldResolvedAt: existingDiagnosis.resolvedAt,
+          newResolvedAt: diagnosis.resolvedAt,
+          oldNotes: existingDiagnosis.notes,
+          newNotes: diagnosis.notes,
+          oldIsPrimary: existingDiagnosis.isPrimary,
+          newIsPrimary: diagnosis.isPrimary,
+          patientName: diagnosis.patient.patientInfo?.fullName,
+          doctorName: `${diagnosis.doctor.doctorInfo?.firstName} ${diagnosis.doctor.doctorInfo?.lastName}`,
+          auditDescription: `Diagnosis updated: ${diagnosisName}`
+        }
       );
 
       res.status(200).json({
@@ -320,6 +497,48 @@ export class DiagnosesController {
 
     } catch (error) {
       console.error('Error updating diagnosis:', error);
+      
+      // Audit log for failure
+      try {
+        const diagnosisId = req.params.diagnosisId;
+        const {
+          diagnosisCode,
+          diagnosisName,
+          description,
+          severity,
+          status,
+          onsetDate,
+          resolvedAt,
+          notes,
+          isPrimary
+        } = req.body;
+        const doctorId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'DIAGNOSIS_UPDATE_FAILED',
+          AuditLevel.ERROR,
+          `Failed to update diagnosis: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          doctorId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            diagnosisId: diagnosisId,
+            diagnosisCode: diagnosisCode,
+            diagnosisName: diagnosisName,
+            description: description,
+            severity: severity,
+            status: status,
+            onsetDate: onsetDate,
+            resolvedAt: resolvedAt,
+            notes: notes,
+            isPrimary: isPrimary,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to update diagnosis',
@@ -353,15 +572,31 @@ export class DiagnosesController {
       });
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'DELETE',
         doctorId,
-        'DELETE_DIAGNOSIS',
-        'DATA_MODIFICATION',
-        `Diagnosis deleted: ${existingDiagnosis.diagnosisName}`,
+        'DIAGNOSIS',
+        diagnosisId.toString(),
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'DIAGNOSIS',
-        diagnosisId.toString()
+        {
+          diagnosisId: diagnosisId,
+          patientId: existingDiagnosis.patientId,
+          doctorId: existingDiagnosis.doctorId,
+          consultationId: existingDiagnosis.consultationId,
+          diagnosisCode: existingDiagnosis.diagnosisCode,
+          diagnosisName: existingDiagnosis.diagnosisName,
+          description: existingDiagnosis.description,
+          severity: existingDiagnosis.severity,
+          status: existingDiagnosis.status,
+          onsetDate: existingDiagnosis.onsetDate,
+          diagnosedAt: existingDiagnosis.diagnosedAt,
+          resolvedAt: existingDiagnosis.resolvedAt,
+          notes: existingDiagnosis.notes,
+          isPrimary: existingDiagnosis.isPrimary,
+          deletedAt: new Date(),
+          auditDescription: `Diagnosis deleted: ${existingDiagnosis.diagnosisName}`
+        }
       );
 
       res.status(200).json({
@@ -371,6 +606,28 @@ export class DiagnosesController {
 
     } catch (error) {
       console.error('Error deleting diagnosis:', error);
+      
+      // Audit log for failure
+      try {
+        const diagnosisId = req.params.diagnosisId;
+        const doctorId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'DIAGNOSIS_DELETE_FAILED',
+          AuditLevel.ERROR,
+          `Failed to delete diagnosis: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          doctorId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            diagnosisId: diagnosisId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to delete diagnosis',

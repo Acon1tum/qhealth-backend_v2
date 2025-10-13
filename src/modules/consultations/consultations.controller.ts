@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { Role, AccessLevel, PrivacySettingType } from '@prisma/client';
-import { AuditService } from '../../shared/services/audit.service';
+import { Role, AccessLevel, PrivacySettingType, AuditCategory, AuditLevel } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { NotificationService } from '../notifications/notification.service';
 
 const prisma = new PrismaClient();
@@ -77,15 +77,25 @@ export class ConsultationsController {
       });
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'CREATE',
         userId,
-        'CREATE_CONSULTATION',
-        'DATA_MODIFICATION',
-        `Consultation created for patient ${consultation.patient.patientInfo?.fullName}`,
+        'CONSULTATION',
+        consultation.id.toString(),
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'CONSULTATION',
-        consultation.id.toString()
+        {
+          patientId: consultation.patientId,
+          doctorId: consultation.doctorId,
+          consultationCode: consultation.consultationCode,
+          appointmentId: appointmentId,
+          startTime: consultation.startTime,
+          endTime: consultation.endTime,
+          diagnosis: consultation.diagnosis,
+          treatment: consultation.treatment,
+          followUpDate: consultation.followUpDate,
+          description: `Consultation created for patient ${consultation.patient.patientInfo?.fullName}`
+        }
       );
 
       // Send notification to patient
@@ -103,6 +113,34 @@ export class ConsultationsController {
 
     } catch (error) {
       console.error('Error creating consultation:', error);
+      
+      // Audit log for failure
+      try {
+        const { appointmentId, startTime, endTime, notes, diagnosis, treatment, followUpDate } = req.body;
+        const userId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'CONSULTATION_CREATION_FAILED',
+          AuditLevel.ERROR,
+          `Failed to create consultation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            appointmentId: appointmentId,
+            startTime: startTime,
+            endTime: endTime,
+            notes: notes,
+            diagnosis: diagnosis,
+            treatment: treatment,
+            followUpDate: followUpDate,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to create consultation',
@@ -173,15 +211,25 @@ export class ConsultationsController {
       });
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'CREATE',
         doctorId,
-        'CREATE_DIRECT_CONSULTATION',
-        'DATA_MODIFICATION',
-        `Direct consultation created for patient ${consultation.patient.patientInfo?.fullName}`,
+        'CONSULTATION',
+        consultation.id.toString(),
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'CONSULTATION',
-        consultation.id.toString()
+        {
+          patientId: consultation.patientId,
+          doctorId: consultation.doctorId,
+          consultationCode: consultation.consultationCode,
+          startTime: consultation.startTime,
+          endTime: consultation.endTime,
+          notes: consultation.notes,
+          diagnosis: consultation.diagnosis,
+          treatment: consultation.treatment,
+          followUpDate: consultation.followUpDate,
+          description: `Direct consultation created for patient ${consultation.patient.patientInfo?.fullName}`
+        }
       );
 
       res.status(201).json({
@@ -192,6 +240,34 @@ export class ConsultationsController {
 
     } catch (error) {
       console.error('Error creating direct consultation:', error);
+      
+      // Audit log for failure
+      try {
+        const { patientId, startTime, endTime, notes, diagnosis, treatment, followUpDate } = req.body;
+        const doctorId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'DIRECT_CONSULTATION_CREATION_FAILED',
+          AuditLevel.ERROR,
+          `Failed to create direct consultation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          doctorId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            patientId: patientId,
+            startTime: startTime,
+            endTime: endTime,
+            notes: notes,
+            diagnosis: diagnosis,
+            treatment: treatment,
+            followUpDate: followUpDate,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to create direct consultation',
@@ -240,11 +316,47 @@ export class ConsultationsController {
       // Check permissions
       const hasAccess = await this.checkConsultationAccess(userId, userRole, consultation);
       if (!hasAccess) {
+        // Audit log for unauthorized access attempt
+        await AuditService.logSecurityEvent(
+          'UNAUTHORIZED_CONSULTATION_ACCESS',
+          AuditLevel.WARNING,
+          `Unauthorized attempt to access consultation ${consultationId}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            consultationId: consultationId,
+            userRole: userRole,
+            patientId: consultation.patientId,
+            doctorId: consultation.doctorId,
+            isPublic: consultation.isPublic
+          }
+        );
+        
         return res.status(403).json({
           success: false,
           message: 'You do not have access to this consultation'
         });
       }
+
+      // Audit log for successful access
+      await AuditService.logDataAccess(
+        'VIEW_CONSULTATION',
+        userId,
+        'CONSULTATION',
+        consultationId,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          consultationId: consultationId,
+          patientId: consultation.patientId,
+          doctorId: consultation.doctorId,
+          consultationCode: consultation.consultationCode,
+          startTime: consultation.startTime,
+          endTime: consultation.endTime,
+          description: `Viewed consultation ${consultationId}`
+        }
+      );
 
       res.json({
         success: true,
@@ -253,6 +365,28 @@ export class ConsultationsController {
 
     } catch (error) {
       console.error('Error fetching consultation:', error);
+      
+      // Audit log for failure
+      try {
+        const { consultationId } = req.params;
+        const userId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'CONSULTATION_FETCH_FAILED',
+          AuditLevel.ERROR,
+          `Failed to fetch consultation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            consultationId: consultationId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to fetch consultation',
@@ -354,15 +488,29 @@ export class ConsultationsController {
       }
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'UPDATE',
         userId,
-        'UPDATE_CONSULTATION',
-        'DATA_MODIFICATION',
-        `Consultation ${consultationId} updated`,
+        'CONSULTATION',
+        consultationId,
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'CONSULTATION',
-        consultationId
+        {
+          consultationId: consultationId,
+          patientId: consultation.patientId,
+          doctorId: consultation.doctorId,
+          notes: notes,
+          diagnosis: diagnosis,
+          treatment: treatment,
+          followUpDate: followUpDate,
+          isPublic: isPublic,
+          oldNotes: consultation.notes,
+          oldDiagnosis: consultation.diagnosis,
+          oldTreatment: consultation.treatment,
+          oldFollowUpDate: consultation.followUpDate,
+          oldIsPublic: consultation.isPublic,
+          description: `Consultation ${consultationId} updated`
+        }
       );
 
       res.json({
@@ -373,6 +521,34 @@ export class ConsultationsController {
 
     } catch (error) {
       console.error('Error updating consultation:', error);
+      
+      // Audit log for failure
+      try {
+        const { consultationId } = req.params;
+        const { notes, diagnosis, treatment, followUpDate, isPublic } = req.body;
+        const userId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'CONSULTATION_UPDATE_FAILED',
+          AuditLevel.ERROR,
+          `Failed to update consultation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            consultationId: consultationId,
+            notes: notes,
+            diagnosis: diagnosis,
+            treatment: treatment,
+            followUpDate: followUpDate,
+            isPublic: isPublic,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to update consultation',
@@ -416,15 +592,20 @@ export class ConsultationsController {
       });
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'CREATE',
         userId,
-        'CREATE_HEALTH_SCAN',
-        'DATA_MODIFICATION',
-        `Health scan created for consultation ${consultationId}`,
+        'HEALTH_SCAN',
+        healthScan.id.toString(),
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'HEALTH_SCAN',
-        healthScan.id.toString()
+        {
+          consultationId: consultationId,
+          healthScanId: healthScan.id,
+          healthData: healthData,
+          doctorId: userId,
+          description: `Health scan created for consultation ${consultationId}`
+        }
       );
 
       res.status(201).json({
@@ -435,6 +616,29 @@ export class ConsultationsController {
 
     } catch (error) {
       console.error('Error creating health scan:', error);
+      
+      // Audit log for failure
+      try {
+        const { consultationId, healthData } = req.body;
+        const userId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'HEALTH_SCAN_CREATION_FAILED',
+          AuditLevel.ERROR,
+          `Failed to create health scan: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            consultationId: consultationId,
+            healthData: healthData,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to create health scan',
@@ -485,11 +689,45 @@ export class ConsultationsController {
       // Check permissions
       const hasAccess = await this.checkHealthScanAccess(userId, userRole, healthScan);
       if (!hasAccess) {
+        // Audit log for unauthorized access attempt
+        await AuditService.logSecurityEvent(
+          'UNAUTHORIZED_HEALTH_SCAN_ACCESS',
+          AuditLevel.WARNING,
+          `Unauthorized attempt to access health scan ${scanId}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            scanId: scanId,
+            userRole: userRole,
+            consultationId: healthScan.consultation.id,
+            patientId: healthScan.consultation.patientId,
+            doctorId: healthScan.consultation.doctorId
+          }
+        );
+        
         return res.status(403).json({
           success: false,
           message: 'You do not have access to this health scan'
         });
       }
+
+      // Audit log for successful access
+      await AuditService.logDataAccess(
+        'VIEW_HEALTH_SCAN',
+        userId,
+        'HEALTH_SCAN',
+        scanId,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          scanId: scanId,
+          consultationId: healthScan.consultationId,
+          patientId: healthScan.consultation.patientId,
+          doctorId: healthScan.consultation.doctorId,
+          description: `Viewed health scan ${scanId}`
+        }
+      );
 
       res.json({
         success: true,
@@ -498,6 +736,28 @@ export class ConsultationsController {
 
     } catch (error) {
       console.error('Error fetching health scan:', error);
+      
+      // Audit log for failure
+      try {
+        const { scanId } = req.params;
+        const userId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'HEALTH_SCAN_FETCH_FAILED',
+          AuditLevel.ERROR,
+          `Failed to fetch health scan: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            scanId: scanId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to fetch health scan',
@@ -623,15 +883,22 @@ export class ConsultationsController {
       }
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'UPDATE',
         userId,
-        'UPDATE_CONSULTATION_PRIVACY',
-        'DATA_MODIFICATION',
-        `Privacy settings updated for consultation ${consultationId}`,
+        'CONSULTATION',
+        consultationId,
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'CONSULTATION',
-        consultationId
+        {
+          consultationId: consultationId,
+          patientId: consultation.patientId,
+          doctorId: consultation.doctorId,
+          privacySettings: privacySettings,
+          isPublic: isPublic,
+          oldIsPublic: consultation.isPublic,
+          description: `Privacy settings updated for consultation ${consultationId}`
+        }
       );
 
       res.json({
@@ -642,6 +909,31 @@ export class ConsultationsController {
 
     } catch (error) {
       console.error('Error updating privacy settings:', error);
+      
+      // Audit log for failure
+      try {
+        const { consultationId } = req.params;
+        const { privacySettings, isPublic } = req.body;
+        const userId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'CONSULTATION_PRIVACY_UPDATE_FAILED',
+          AuditLevel.ERROR,
+          `Failed to update privacy settings: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            consultationId: consultationId,
+            privacySettings: privacySettings,
+            isPublic: isPublic,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to update privacy settings',
@@ -702,15 +994,23 @@ export class ConsultationsController {
       });
 
       // Audit log
-      await AuditService.logUserActivity(
-        userId,
+      await AuditService.logDataAccess(
         'SHARE_CONSULTATION',
-        'DATA_ACCESS',
-        `Consultation ${consultationId} shared with doctor ${doctorId}`,
+        userId,
+        'CONSULTATION',
+        consultationId,
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'CONSULTATION',
-        consultationId
+        {
+          consultationId: consultationId,
+          patientId: consultation.patientId,
+          doctorId: consultation.doctorId,
+          sharedWithDoctorId: doctorId,
+          accessLevel: accessLevel,
+          expiresAt: expiresAt,
+          sharingId: sharing.id,
+          description: `Consultation ${consultationId} shared with doctor ${doctorId}`
+        }
       );
 
       res.status(201).json({
@@ -721,6 +1021,32 @@ export class ConsultationsController {
 
     } catch (error) {
       console.error('Error sharing consultation:', error);
+      
+      // Audit log for failure
+      try {
+        const { consultationId } = req.params;
+        const { doctorId, accessLevel, expiresAt } = req.body;
+        const userId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'CONSULTATION_SHARE_FAILED',
+          AuditLevel.ERROR,
+          `Failed to share consultation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            consultationId: consultationId,
+            doctorId: doctorId,
+            accessLevel: accessLevel,
+            expiresAt: expiresAt,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to share consultation',
@@ -851,15 +1177,23 @@ export class ConsultationsController {
       }
 
       // Audit log for successful join
-      await AuditService.logUserActivity(
-        userId,
+      await AuditService.logDataAccess(
         'JOIN_CONSULTATION',
-        'DATA_ACCESS',
-        `User joined consultation ${consultation.id} with code ${consultationCode}`,
+        userId,
+        'CONSULTATION',
+        consultation.id.toString(),
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'CONSULTATION',
-        consultation.id.toString()
+        {
+          consultationId: consultation.id,
+          consultationCode: consultationCode,
+          patientId: consultation.patientId,
+          doctorId: consultation.doctorId,
+          startTime: consultation.startTime,
+          endTime: consultation.endTime,
+          userRole: userRole,
+          description: `User joined consultation ${consultation.id} with code ${consultationCode}`
+        }
       );
 
       res.json({
@@ -877,6 +1211,28 @@ export class ConsultationsController {
 
     } catch (error) {
       console.error('Error joining consultation:', error);
+      
+      // Audit log for failure
+      try {
+        const { consultationCode } = req.body;
+        const userId = (req as any).user.id;
+        
+        await AuditService.logSecurityEvent(
+          'CONSULTATION_JOIN_FAILED',
+          AuditLevel.ERROR,
+          `Failed to join consultation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            consultationCode: consultationCode,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to join consultation',

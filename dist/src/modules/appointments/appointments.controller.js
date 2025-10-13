@@ -12,14 +12,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppointmentsController = void 0;
 const client_1 = require("@prisma/client");
 const client_2 = require("@prisma/client");
-const audit_service_1 = require("../../shared/services/audit.service");
+const audit_service_1 = require("../audit/audit.service");
+const client_3 = require("@prisma/client");
 const notification_service_1 = require("../notifications/notification.service");
 const prisma = new client_1.PrismaClient();
 class AppointmentsController {
     // Create appointment request
     createAppointmentRequest(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c;
+            var _a, _b, _c, _d;
             try {
                 const { patientId, doctorId, requestedDate, requestedTime, reason, priority, notes } = req.body;
                 const userId = req.user.id;
@@ -38,6 +39,14 @@ class AppointmentsController {
                 }
                 // Verify patient is creating their own appointment
                 if (userId !== patientId) {
+                    // Log security event for unauthorized appointment creation attempt
+                    yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_APPOINTMENT_CREATION', client_3.AuditLevel.WARNING, `User ${userId} attempted to create appointment for different patient ${patientId}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        userId,
+                        patientId,
+                        doctorId,
+                        requestedDate,
+                        requestedTime
+                    });
                     return res.status(403).json({
                         success: false,
                         message: 'You can only create appointments for yourself'
@@ -117,7 +126,14 @@ class AppointmentsController {
                     }
                 });
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(userId, 'CREATE_APPOINTMENT_REQUEST', 'USER_ACTIVITY', `Appointment request created for ${(_a = appointment.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName} with Dr. ${(_b = appointment.doctor.doctorInfo) === null || _b === void 0 ? void 0 : _b.firstName} ${(_c = appointment.doctor.doctorInfo) === null || _c === void 0 ? void 0 : _c.lastName}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'APPOINTMENT_REQUEST', appointment.id.toString());
+                yield audit_service_1.AuditService.logUserActivity('CREATE_APPOINTMENT_REQUEST', userId, `Appointment request created for ${(_a = appointment.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName} with Dr. ${(_b = appointment.doctor.doctorInfo) === null || _b === void 0 ? void 0 : _b.firstName} ${(_c = appointment.doctor.doctorInfo) === null || _c === void 0 ? void 0 : _c.lastName}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'APPOINTMENT_REQUEST', appointment.id, {
+                    patientId: appointment.patientId,
+                    doctorId: appointment.doctorId,
+                    requestedDate: appointment.requestedDate,
+                    requestedTime: appointment.requestedTime,
+                    priority: appointment.priority,
+                    reason: appointment.reason
+                });
                 // Send notifications
                 yield notification_service_1.NotificationService.notifyAppointmentCreated(appointment.id, doctorId, patientId, parsedDate, requestedTime);
                 res.status(201).json({
@@ -128,6 +144,15 @@ class AppointmentsController {
             }
             catch (error) {
                 console.error('Error creating appointment request:', error);
+                // Log security event for appointment creation failures
+                yield audit_service_1.AuditService.logSecurityEvent('APPOINTMENT_CREATION_FAILED', client_3.AuditLevel.ERROR, `Failed to create appointment request: ${error instanceof Error ? error.message : 'Unknown error'}`, ((_d = req.user) === null || _d === void 0 ? void 0 : _d.id) || null, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    patientId: req.body.patientId,
+                    doctorId: req.body.doctorId,
+                    requestedDate: req.body.requestedDate,
+                    requestedTime: req.body.requestedTime,
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    stack: error instanceof Error ? error.stack : null
+                });
                 res.status(500).json({
                     success: false,
                     message: 'Failed to create appointment request',
@@ -139,7 +164,7 @@ class AppointmentsController {
     // Create appointment request by doctor for patient (for scheduling to another doctor)
     createAppointmentRequestByDoctor(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c;
+            var _a, _b, _c, _d, _e;
             try {
                 const { patientId, doctorId, requestedDate, requestedTime, reason, priority, notes } = req.body;
                 const currentDoctorId = req.user.id;
@@ -240,7 +265,15 @@ class AppointmentsController {
                     }
                 });
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(currentDoctorId, 'CREATE_APPOINTMENT_REQUEST_BY_DOCTOR', 'USER_ACTIVITY', `Doctor scheduled appointment for ${(_a = appointment.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName} with Dr. ${(_b = appointment.doctor.doctorInfo) === null || _b === void 0 ? void 0 : _b.firstName} ${(_c = appointment.doctor.doctorInfo) === null || _c === void 0 ? void 0 : _c.lastName}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'APPOINTMENT_REQUEST', appointment.id.toString());
+                yield audit_service_1.AuditService.logUserActivity('CREATE_APPOINTMENT_REQUEST_BY_DOCTOR', currentDoctorId, `Doctor scheduled appointment for ${(_a = appointment.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName} with Dr. ${(_b = appointment.doctor.doctorInfo) === null || _b === void 0 ? void 0 : _b.firstName} ${(_c = appointment.doctor.doctorInfo) === null || _c === void 0 ? void 0 : _c.lastName}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'APPOINTMENT_REQUEST', appointment.id, {
+                    patientId: appointment.patientId,
+                    doctorId: appointment.doctorId,
+                    requestedDate: appointment.requestedDate,
+                    requestedTime: appointment.requestedTime,
+                    priority: appointment.priority,
+                    reason: appointment.reason,
+                    scheduledByDoctor: true
+                });
                 res.status(201).json({
                     success: true,
                     message: 'Appointment request created successfully',
@@ -249,6 +282,16 @@ class AppointmentsController {
             }
             catch (error) {
                 console.error('Error creating appointment request by doctor:', error);
+                // Log security event for doctor appointment creation failures
+                yield audit_service_1.AuditService.logSecurityEvent('DOCTOR_APPOINTMENT_CREATION_FAILED', client_3.AuditLevel.ERROR, `Doctor failed to create appointment request: ${error instanceof Error ? error.message : 'Unknown error'}`, ((_d = req.user) === null || _d === void 0 ? void 0 : _d.id) || null, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    currentDoctorId: (_e = req.user) === null || _e === void 0 ? void 0 : _e.id,
+                    patientId: req.body.patientId,
+                    doctorId: req.body.doctorId,
+                    requestedDate: req.body.requestedDate,
+                    requestedTime: req.body.requestedTime,
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    stack: error instanceof Error ? error.stack : null
+                });
                 res.status(500).json({
                     success: false,
                     message: 'Failed to create appointment request',
@@ -315,6 +358,14 @@ class AppointmentsController {
                     }),
                     prisma.appointmentRequest.count({ where: whereClause })
                 ]);
+                // Audit log for data access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_APPOINTMENTS', userId, 'APPOINTMENT_REQUEST', 'LIST', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    userRole,
+                    status: status || 'ALL',
+                    page: Number(page),
+                    limit: Number(limit),
+                    totalResults: total
+                });
                 res.json({
                     success: true,
                     data: appointments,
@@ -345,6 +396,13 @@ class AppointmentsController {
                 const userId = req.user.id;
                 // Verify user is a doctor
                 if (req.user.role !== client_2.Role.DOCTOR) {
+                    // Log security event for unauthorized appointment status update attempt
+                    yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_APPOINTMENT_STATUS_UPDATE', client_3.AuditLevel.WARNING, `Non-doctor user ${userId} attempted to update appointment status`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        userId,
+                        appointmentId,
+                        userRole: req.user.role,
+                        requestedStatus: status
+                    });
                     return res.status(403).json({
                         success: false,
                         message: 'Only doctors can update appointment status'
@@ -355,6 +413,13 @@ class AppointmentsController {
                     where: { id: appointmentId, doctorId: userId }
                 });
                 if (!appointment) {
+                    // Log security event for appointment access attempt
+                    yield audit_service_1.AuditService.logSecurityEvent('APPOINTMENT_ACCESS_DENIED', client_3.AuditLevel.WARNING, `Doctor ${userId} attempted to access appointment ${appointmentId} without permission`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        userId,
+                        appointmentId,
+                        userRole: req.user.role,
+                        action: 'UPDATE_STATUS'
+                    });
                     return res.status(404).json({
                         success: false,
                         message: 'Appointment not found or you do not have permission'
@@ -389,7 +454,14 @@ class AppointmentsController {
                     yield this.createConsultation(updatedAppointment);
                 }
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(userId, 'UPDATE_APPOINTMENT_STATUS', 'USER_ACTIVITY', `Appointment ${appointmentId} status updated to ${status}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'APPOINTMENT_REQUEST', appointmentId);
+                yield audit_service_1.AuditService.logDataModification('UPDATE', userId, 'APPOINTMENT_REQUEST', appointmentId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    oldStatus: appointment.status,
+                    newStatus: status,
+                    patientId: appointment.patientId,
+                    doctorId: appointment.doctorId,
+                    notes: notes || null,
+                    consultationCreated: status === client_2.AppointmentStatus.CONFIRMED
+                });
                 // Send notifications
                 if (status === client_2.AppointmentStatus.CONFIRMED) {
                     yield notification_service_1.NotificationService.notifyAppointmentConfirmed(appointmentId, updatedAppointment.patientId, updatedAppointment.doctorId, updatedAppointment.requestedDate, updatedAppointment.requestedTime);
@@ -460,7 +532,15 @@ class AppointmentsController {
                     }
                 });
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(userId, 'REQUEST_RESCHEDULE', 'USER_ACTIVITY', `Reschedule requested for appointment ${appointmentId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'RESCHEDULE_REQUEST', rescheduleRequest.id.toString());
+                yield audit_service_1.AuditService.logUserActivity('REQUEST_RESCHEDULE', userId, `Reschedule requested for appointment ${appointmentId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'RESCHEDULE_REQUEST', rescheduleRequest.id, {
+                    appointmentId,
+                    currentDate: appointment.requestedDate,
+                    currentTime: appointment.requestedTime,
+                    newDate: rescheduleRequest.newDate,
+                    newTime: rescheduleRequest.newTime,
+                    reason: rescheduleRequest.reason,
+                    requestedByRole: userRole
+                });
                 // Send notification to the other party
                 const recipientId = userRole === client_2.Role.PATIENT ? appointment.doctorId : appointment.patientId;
                 yield notification_service_1.NotificationService.notifyRescheduleRequest(rescheduleRequest.id, recipientId, appointment.requestedDate, appointment.requestedTime, newDate, newTime);
@@ -531,7 +611,14 @@ class AppointmentsController {
                     yield notification_service_1.NotificationService.notifyAppointmentRescheduled(rescheduleRequest.appointmentId, rescheduleRequest.appointment.doctorId, rescheduleRequest.newDate, rescheduleRequest.newTime);
                 }
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(userId, 'UPDATE_RESCHEDULE_STATUS', 'USER_ACTIVITY', `Reschedule request ${rescheduleId} ${status.toLowerCase()}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'RESCHEDULE_REQUEST', rescheduleId);
+                yield audit_service_1.AuditService.logDataModification('UPDATE', userId, 'RESCHEDULE_REQUEST', rescheduleId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    oldStatus: rescheduleRequest.status,
+                    newStatus: status,
+                    appointmentId: rescheduleRequest.appointmentId,
+                    newDate: status === client_2.RescheduleStatus.APPROVED ? rescheduleRequest.newDate : null,
+                    newTime: status === client_2.RescheduleStatus.APPROVED ? rescheduleRequest.newTime : null,
+                    notes: notes || null
+                });
                 res.json({
                     success: true,
                     message: `Reschedule request ${status.toLowerCase()} successfully`,
@@ -581,7 +668,15 @@ class AppointmentsController {
                     }
                 });
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(userId, 'CANCEL_APPOINTMENT', 'USER_ACTIVITY', `Appointment ${appointmentId} cancelled`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'APPOINTMENT_REQUEST', appointmentId);
+                yield audit_service_1.AuditService.logDataModification('DELETE', userId, 'APPOINTMENT_REQUEST', appointmentId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    oldStatus: appointment.status,
+                    newStatus: client_2.AppointmentStatus.CANCELLED,
+                    patientId: appointment.patientId,
+                    doctorId: appointment.doctorId,
+                    cancellationReason: reason || null,
+                    originalDate: appointment.requestedDate,
+                    originalTime: appointment.requestedTime
+                });
                 res.json({
                     success: true,
                     message: 'Appointment cancelled successfully',
@@ -742,6 +837,12 @@ class AppointmentsController {
                     const dayAppointments = appointmentsByDay.get(day) || [];
                     return Object.assign(Object.assign({}, schedule), { hasExistingAppointments: dayAppointments.length > 0, existingAppointments: dayAppointments });
                 });
+                // Audit log for data access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_WEEKLY_AVAILABILITY', doctorId, 'DOCTOR_SCHEDULE', 'LIST', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    doctorId,
+                    daysCount: normalized.length,
+                    hasExistingAppointments: normalized.some(day => day.hasExistingAppointments)
+                });
                 res.json({ success: true, data: normalized });
             }
             catch (error) {
@@ -829,6 +930,17 @@ class AppointmentsController {
                     });
                 });
                 yield Promise.all(operations);
+                // Audit log for data modification
+                yield audit_service_1.AuditService.logDataModification('UPDATE', doctorId, 'DOCTOR_SCHEDULE', 'BULK_UPDATE', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    doctorId,
+                    updatedDays: days.length,
+                    days: days.map(d => ({
+                        dayOfWeek: d.dayOfWeek,
+                        isAvailable: d.isAvailable,
+                        startTime: d.startTime,
+                        endTime: d.endTime
+                    }))
+                });
                 res.json({ success: true, message: 'Availability updated' });
             }
             catch (error) {
@@ -904,7 +1016,14 @@ class AppointmentsController {
                     }
                 });
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(doctorId, 'REQUEST_BULK_RESCHEDULE', 'USER_ACTIVITY', `Requested reschedule for ${dayAppointments.length} appointments on ${dayOfWeek}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'RESCHEDULE_REQUEST', dayOfWeek);
+                yield audit_service_1.AuditService.logUserActivity('REQUEST_BULK_RESCHEDULE', doctorId, `Requested reschedule for ${dayAppointments.length} appointments on ${dayOfWeek}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'RESCHEDULE_REQUEST', 'BULK_OPERATION', {
+                    dayOfWeek,
+                    appointmentCount: dayAppointments.length,
+                    reason,
+                    newDate: newDate || null,
+                    newTime: newTime || null,
+                    appointmentIds: dayAppointments.map(apt => apt.id)
+                });
                 res.json({
                     success: true,
                     message: `Reschedule requests sent for ${dayAppointments.length} appointments on ${dayOfWeek}`,
@@ -920,6 +1039,7 @@ class AppointmentsController {
     // Get available doctors for appointment booking
     getAvailableDoctors(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             try {
                 const doctors = yield prisma.user.findMany({
                     where: { role: client_2.Role.DOCTOR },
@@ -951,6 +1071,11 @@ class AppointmentsController {
                         organizationId: doctor.organizationId
                     });
                 });
+                // Audit log for data access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_AVAILABLE_DOCTORS', ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'anonymous', 'DOCTOR', 'LIST', req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    doctorCount: formattedDoctors.length,
+                    userRole: ((_b = req.user) === null || _b === void 0 ? void 0 : _b.role) || 'anonymous'
+                });
                 res.json({
                     success: true,
                     data: formattedDoctors
@@ -968,6 +1093,7 @@ class AppointmentsController {
     // Get doctor availability by doctor ID (for patients to check availability)
     getDoctorAvailability(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c;
             try {
                 const { doctorId } = req.params;
                 // Validate UUID format
@@ -987,6 +1113,12 @@ class AppointmentsController {
                     startTime: schedule.startTime.toTimeString().slice(0, 5), // HH:MM format
                     endTime: schedule.endTime.toTimeString().slice(0, 5) // HH:MM format
                 }));
+                // Audit log for data access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_DOCTOR_AVAILABILITY', ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) || 'anonymous', 'DOCTOR_SCHEDULE', doctorId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    doctorId,
+                    requestedBy: ((_b = req.user) === null || _b === void 0 ? void 0 : _b.id) || 'anonymous',
+                    userRole: ((_c = req.user) === null || _c === void 0 ? void 0 : _c.role) || 'anonymous'
+                });
                 res.json(availability);
             }
             catch (error) {

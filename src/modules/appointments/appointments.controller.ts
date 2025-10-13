@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AppointmentStatus, RescheduleStatus, Role } from '@prisma/client';
-import { AuditService } from '../../shared/services/audit.service';
+import { AuditService } from '../audit/audit.service';
+import { AuditCategory, AuditLevel } from '@prisma/client';
 import { NotificationService } from '../notifications/notification.service';
 
 const prisma = new PrismaClient();
@@ -31,6 +32,23 @@ export class AppointmentsController {
 
       // Verify patient is creating their own appointment
       if (userId !== patientId) {
+        // Log security event for unauthorized appointment creation attempt
+        await AuditService.logSecurityEvent(
+          'UNAUTHORIZED_APPOINTMENT_CREATION',
+          AuditLevel.WARNING,
+          `User ${userId} attempted to create appointment for different patient ${patientId}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            userId,
+            patientId,
+            doctorId,
+            requestedDate,
+            requestedTime
+          }
+        );
+        
         return res.status(403).json({
           success: false,
           message: 'You can only create appointments for yourself'
@@ -119,14 +137,21 @@ export class AppointmentsController {
 
       // Audit log
       await AuditService.logUserActivity(
-        userId,
         'CREATE_APPOINTMENT_REQUEST',
-        'USER_ACTIVITY',
+        userId,
         `Appointment request created for ${appointment.patient.patientInfo?.fullName} with Dr. ${appointment.doctor.doctorInfo?.firstName} ${appointment.doctor.doctorInfo?.lastName}`,
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
         'APPOINTMENT_REQUEST',
-        appointment.id.toString()
+        appointment.id,
+        {
+          patientId: appointment.patientId,
+          doctorId: appointment.doctorId,
+          requestedDate: appointment.requestedDate,
+          requestedTime: appointment.requestedTime,
+          priority: appointment.priority,
+          reason: appointment.reason
+        }
       );
 
       // Send notifications
@@ -146,6 +171,25 @@ export class AppointmentsController {
 
     } catch (error) {
       console.error('Error creating appointment request:', error);
+      
+      // Log security event for appointment creation failures
+      await AuditService.logSecurityEvent(
+        'APPOINTMENT_CREATION_FAILED',
+        AuditLevel.ERROR,
+        `Failed to create appointment request: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        (req as any).user?.id || null,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          patientId: req.body.patientId,
+          doctorId: req.body.doctorId,
+          requestedDate: req.body.requestedDate,
+          requestedTime: req.body.requestedTime,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : null
+        }
+      );
+      
       res.status(500).json({
         success: false,
         message: 'Failed to create appointment request',
@@ -270,14 +314,22 @@ export class AppointmentsController {
 
       // Audit log
       await AuditService.logUserActivity(
-        currentDoctorId, 
-        'CREATE_APPOINTMENT_REQUEST_BY_DOCTOR', 
-        'USER_ACTIVITY', 
-        `Doctor scheduled appointment for ${appointment.patient.patientInfo?.fullName} with Dr. ${appointment.doctor.doctorInfo?.firstName} ${appointment.doctor.doctorInfo?.lastName}`, 
-        req.ip || 'unknown', 
-        req.get('User-Agent') || 'unknown', 
-        'APPOINTMENT_REQUEST', 
-        appointment.id.toString()
+        'CREATE_APPOINTMENT_REQUEST_BY_DOCTOR',
+        currentDoctorId,
+        `Doctor scheduled appointment for ${appointment.patient.patientInfo?.fullName} with Dr. ${appointment.doctor.doctorInfo?.firstName} ${appointment.doctor.doctorInfo?.lastName}`,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        'APPOINTMENT_REQUEST',
+        appointment.id,
+        {
+          patientId: appointment.patientId,
+          doctorId: appointment.doctorId,
+          requestedDate: appointment.requestedDate,
+          requestedTime: appointment.requestedTime,
+          priority: appointment.priority,
+          reason: appointment.reason,
+          scheduledByDoctor: true
+        }
       );
 
       res.status(201).json({
@@ -288,6 +340,26 @@ export class AppointmentsController {
 
     } catch (error) {
       console.error('Error creating appointment request by doctor:', error);
+      
+      // Log security event for doctor appointment creation failures
+      await AuditService.logSecurityEvent(
+        'DOCTOR_APPOINTMENT_CREATION_FAILED',
+        AuditLevel.ERROR,
+        `Doctor failed to create appointment request: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        (req as any).user?.id || null,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          currentDoctorId: (req as any).user?.id,
+          patientId: req.body.patientId,
+          doctorId: req.body.doctorId,
+          requestedDate: req.body.requestedDate,
+          requestedTime: req.body.requestedTime,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : null
+        }
+      );
+      
       res.status(500).json({
         success: false,
         message: 'Failed to create appointment request',
@@ -358,6 +430,23 @@ export class AppointmentsController {
         prisma.appointmentRequest.count({ where: whereClause })
       ]);
 
+      // Audit log for data access
+      await AuditService.logDataAccess(
+        'VIEW_APPOINTMENTS',
+        userId,
+        'APPOINTMENT_REQUEST',
+        'LIST',
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          userRole,
+          status: status || 'ALL',
+          page: Number(page),
+          limit: Number(limit),
+          totalResults: total
+        }
+      );
+
       res.json({
         success: true,
         data: appointments,
@@ -388,6 +477,22 @@ export class AppointmentsController {
 
       // Verify user is a doctor
       if ((req as any).user.role !== Role.DOCTOR) {
+        // Log security event for unauthorized appointment status update attempt
+        await AuditService.logSecurityEvent(
+          'UNAUTHORIZED_APPOINTMENT_STATUS_UPDATE',
+          AuditLevel.WARNING,
+          `Non-doctor user ${userId} attempted to update appointment status`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            userId,
+            appointmentId,
+            userRole: (req as any).user.role,
+            requestedStatus: status
+          }
+        );
+        
         return res.status(403).json({
           success: false,
           message: 'Only doctors can update appointment status'
@@ -400,6 +505,22 @@ export class AppointmentsController {
       });
 
       if (!appointment) {
+        // Log security event for appointment access attempt
+        await AuditService.logSecurityEvent(
+          'APPOINTMENT_ACCESS_DENIED',
+          AuditLevel.WARNING,
+          `Doctor ${userId} attempted to access appointment ${appointmentId} without permission`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            userId,
+            appointmentId,
+            userRole: (req as any).user.role,
+            action: 'UPDATE_STATUS'
+          }
+        );
+        
         return res.status(404).json({
           success: false,
           message: 'Appointment not found or you do not have permission'
@@ -437,15 +558,21 @@ export class AppointmentsController {
       }
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'UPDATE',
         userId,
-        'UPDATE_APPOINTMENT_STATUS',
-        'USER_ACTIVITY',
-        `Appointment ${appointmentId} status updated to ${status}`,
+        'APPOINTMENT_REQUEST',
+        appointmentId,
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'APPOINTMENT_REQUEST',
-        appointmentId
+        {
+          oldStatus: appointment.status,
+          newStatus: status,
+          patientId: appointment.patientId,
+          doctorId: appointment.doctorId,
+          notes: notes || null,
+          consultationCreated: status === AppointmentStatus.CONFIRMED
+        }
       );
 
       // Send notifications
@@ -534,14 +661,22 @@ export class AppointmentsController {
 
       // Audit log
       await AuditService.logUserActivity(
-        userId,
         'REQUEST_RESCHEDULE',
-        'USER_ACTIVITY',
+        userId,
         `Reschedule requested for appointment ${appointmentId}`,
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
         'RESCHEDULE_REQUEST',
-        rescheduleRequest.id.toString()
+        rescheduleRequest.id,
+        {
+          appointmentId,
+          currentDate: appointment.requestedDate,
+          currentTime: appointment.requestedTime,
+          newDate: rescheduleRequest.newDate,
+          newTime: rescheduleRequest.newTime,
+          reason: rescheduleRequest.reason,
+          requestedByRole: userRole
+        }
       );
 
       // Send notification to the other party
@@ -638,15 +773,21 @@ export class AppointmentsController {
       }
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'UPDATE',
         userId,
-        'UPDATE_RESCHEDULE_STATUS',
-        'USER_ACTIVITY',
-        `Reschedule request ${rescheduleId} ${status.toLowerCase()}`,
+        'RESCHEDULE_REQUEST',
+        rescheduleId,
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'RESCHEDULE_REQUEST',
-        rescheduleId
+        {
+          oldStatus: rescheduleRequest.status,
+          newStatus: status,
+          appointmentId: rescheduleRequest.appointmentId,
+          newDate: status === RescheduleStatus.APPROVED ? rescheduleRequest.newDate : null,
+          newTime: status === RescheduleStatus.APPROVED ? rescheduleRequest.newTime : null,
+          notes: notes || null
+        }
       );
 
       res.json({
@@ -701,15 +842,22 @@ export class AppointmentsController {
       });
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'DELETE',
         userId,
-        'CANCEL_APPOINTMENT',
-        'USER_ACTIVITY',
-        `Appointment ${appointmentId} cancelled`,
+        'APPOINTMENT_REQUEST',
+        appointmentId,
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'APPOINTMENT_REQUEST',
-        appointmentId
+        {
+          oldStatus: appointment.status,
+          newStatus: AppointmentStatus.CANCELLED,
+          patientId: appointment.patientId,
+          doctorId: appointment.doctorId,
+          cancellationReason: reason || null,
+          originalDate: appointment.requestedDate,
+          originalTime: appointment.requestedTime
+        }
       );
 
       res.json({
@@ -895,6 +1043,21 @@ export class AppointmentsController {
         };
       });
 
+      // Audit log for data access
+      await AuditService.logDataAccess(
+        'VIEW_WEEKLY_AVAILABILITY',
+        doctorId,
+        'DOCTOR_SCHEDULE',
+        'LIST',
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          doctorId,
+          daysCount: normalized.length,
+          hasExistingAppointments: normalized.some(day => day.hasExistingAppointments)
+        }
+      );
+
       res.json({ success: true, data: normalized });
     } catch (error) {
       console.error('Error fetching weekly availability:', error);
@@ -992,6 +1155,26 @@ export class AppointmentsController {
 
       await Promise.all(operations);
 
+      // Audit log for data modification
+      await AuditService.logDataModification(
+        'UPDATE',
+        doctorId,
+        'DOCTOR_SCHEDULE',
+        'BULK_UPDATE',
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          doctorId,
+          updatedDays: days.length,
+          days: days.map(d => ({
+            dayOfWeek: d.dayOfWeek,
+            isAvailable: d.isAvailable,
+            startTime: d.startTime,
+            endTime: d.endTime
+          }))
+        }
+      );
+
       res.json({ success: true, message: 'Availability updated' });
     } catch (error) {
       console.error('Error updating weekly availability:', error);
@@ -1077,14 +1260,21 @@ export class AppointmentsController {
       
       // Audit log
       await AuditService.logUserActivity(
-        doctorId,
         'REQUEST_BULK_RESCHEDULE',
-        'USER_ACTIVITY',
+        doctorId,
         `Requested reschedule for ${dayAppointments.length} appointments on ${dayOfWeek}`,
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
         'RESCHEDULE_REQUEST',
-        dayOfWeek
+        'BULK_OPERATION',
+        {
+          dayOfWeek,
+          appointmentCount: dayAppointments.length,
+          reason,
+          newDate: newDate || null,
+          newTime: newTime || null,
+          appointmentIds: dayAppointments.map(apt => apt.id)
+        }
       );
       
       res.json({
@@ -1131,6 +1321,20 @@ export class AppointmentsController {
         organizationId: doctor.organizationId
       }));
 
+      // Audit log for data access
+      await AuditService.logDataAccess(
+        'VIEW_AVAILABLE_DOCTORS',
+        (req as any).user?.id || 'anonymous',
+        'DOCTOR',
+        'LIST',
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          doctorCount: formattedDoctors.length,
+          userRole: (req as any).user?.role || 'anonymous'
+        }
+      );
+
       res.json({
         success: true,
         data: formattedDoctors
@@ -1168,6 +1372,21 @@ export class AppointmentsController {
         startTime: schedule.startTime.toTimeString().slice(0, 5), // HH:MM format
         endTime: schedule.endTime.toTimeString().slice(0, 5) // HH:MM format
       }));
+
+      // Audit log for data access
+      await AuditService.logDataAccess(
+        'VIEW_DOCTOR_AVAILABILITY',
+        (req as any).user?.id || 'anonymous',
+        'DOCTOR_SCHEDULE',
+        doctorId,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          doctorId,
+          requestedBy: (req as any).user?.id || 'anonymous',
+          userRole: (req as any).user?.role || 'anonymous'
+        }
+      );
 
       res.json(availability);
     } catch (error) {

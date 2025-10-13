@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { Role } from '@prisma/client';
-import { AuditService } from '../../shared/services/audit.service';
+import { PrismaClient, Role, AuditLevel } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { NotificationService } from '../notifications/notification.service';
 
 const prisma = new PrismaClient();
@@ -21,6 +20,16 @@ export class SelfCheckController {
       console.log('✅ Health scan count:', healthScanCount);
       console.log('✅ Consultation count:', consultationCount);
       
+      await AuditService.logDataAccess(
+        'TEST_DATABASE_CONNECTION',
+        (req as any).user?.id || 'system',
+        'SYSTEM',
+        'database_connection',
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        { userCount, healthScanCount, consultationCount, auditDescription: 'Database connectivity test successful' }
+      );
+      
       res.json({
         success: true,
         message: 'Database connection successful',
@@ -33,6 +42,19 @@ export class SelfCheckController {
       });
     } catch (error) {
       console.error('❌ Database connection failed:', error);
+      try {
+        await AuditService.logSecurityEvent(
+          'DATABASE_CONNECTION_FAILED',
+          AuditLevel.ERROR,
+          `Database connection test failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          (req as any).user?.id || 'system',
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {}
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
       res.status(500).json({
         success: false,
         message: 'Database connection failed',
@@ -63,6 +85,15 @@ export class SelfCheckController {
 
       // Verify user is a patient
       if (userRole !== Role.PATIENT) {
+        await AuditService.logSecurityEvent(
+          'UNAUTHORIZED_SELF_CHECK_SAVE',
+          AuditLevel.WARNING,
+          'Non-patient attempted to save self-check results',
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          { userRole }
+        );
         return res.status(403).json({
           success: false,
           message: 'Only patients can save self-check results'
@@ -72,6 +103,15 @@ export class SelfCheckController {
       // Validate required data
       if (!healthData || Object.keys(healthData).length === 0) {
         console.error('❌ No health data provided');
+        await AuditService.logSecurityEvent(
+          'SELF_CHECK_MISSING_HEALTH_DATA',
+          AuditLevel.WARNING,
+          'Health data missing in self-check save',
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {}
+        );
         return res.status(400).json({
           success: false,
           message: 'Health data is required'
@@ -80,6 +120,15 @@ export class SelfCheckController {
 
       if (!scanResults || scanResults.length === 0) {
         console.error('❌ No scan results provided');
+        await AuditService.logSecurityEvent(
+          'SELF_CHECK_MISSING_SCAN_RESULTS',
+          AuditLevel.WARNING,
+          'Scan results missing in self-check save',
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {}
+        );
         return res.status(400).json({
           success: false,
           message: 'Scan results are required'
@@ -174,15 +223,21 @@ export class SelfCheckController {
       });
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'CREATE',
         userId,
-        'SAVE_SELF_CHECK_RESULTS',
-        'DATA_MODIFICATION',
-        `Self-check health scan results saved for user ${userId}`,
+        'HEALTH_SCAN',
+        healthScan.id.toString(),
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'HEALTH_SCAN',
-        healthScan.id.toString()
+        {
+          consultationId: consultation.id,
+          healthScanId: healthScan.id,
+          isSelfCheck: true,
+          metricsIncluded: Object.keys(healthData || {}),
+          scanType,
+          auditDescription: `Self-check results saved by user ${userId}`
+        }
       );
 
       // Send notification to patient
@@ -214,6 +269,20 @@ export class SelfCheckController {
       console.error('❌ Error details:', error);
       console.error('❌ Error message:', error instanceof Error ? error.message : 'Unknown error');
       console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      try {
+        const userId = (req as any).user?.id || 'unknown';
+        await AuditService.logSecurityEvent(
+          'SELF_CHECK_SAVE_FAILED',
+          AuditLevel.ERROR,
+          `Failed to save self-check results: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          { bodyKeys: Object.keys(req.body || {}) }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
       
       res.status(500).json({
         success: false,
@@ -262,6 +331,16 @@ export class SelfCheckController {
         }
       });
 
+      await AuditService.logDataAccess(
+        'VIEW_SELF_CHECK_HISTORY',
+        userId,
+        'HEALTH_SCAN',
+        'self_check_history',
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        { totalCount: selfCheckHistory.length, auditDescription: `Self-check history viewed by user ${userId}` }
+      );
+
       res.json({
         success: true,
         data: {
@@ -272,6 +351,19 @@ export class SelfCheckController {
 
     } catch (error) {
       console.error('Error fetching self-check history:', error);
+      try {
+        await AuditService.logSecurityEvent(
+          'SELF_CHECK_HISTORY_FETCH_FAILED',
+          AuditLevel.ERROR,
+          `Failed to fetch self-check history: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          (req as any).user?.id || 'unknown',
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {}
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
       res.status(500).json({
         success: false,
         message: 'Failed to fetch self-check history',
@@ -289,6 +381,15 @@ export class SelfCheckController {
 
       // Verify user is a patient
       if (userRole !== Role.PATIENT) {
+        await AuditService.logSecurityEvent(
+          'UNAUTHORIZED_SELF_CHECK_VIEW',
+          AuditLevel.WARNING,
+          'Non-patient attempted to view self-check result',
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          { consultationId }
+        );
         return res.status(403).json({
           success: false,
           message: 'Only patients can view self-check results'
@@ -319,11 +420,30 @@ export class SelfCheckController {
       });
 
       if (!selfCheckResult) {
+        await AuditService.logSecurityEvent(
+          'SELF_CHECK_RESULT_NOT_FOUND',
+          AuditLevel.WARNING,
+          'Self-check result not found or no permission',
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          { consultationId }
+        );
         return res.status(404).json({
           success: false,
           message: 'Self-check result not found or you do not have permission to view it'
         });
       }
+
+      await AuditService.logDataAccess(
+        'VIEW_SELF_CHECK_RESULT',
+        userId,
+        'HEALTH_SCAN',
+        consultationId,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        { consultationId, auditDescription: `Self-check result viewed by user ${userId}` }
+      );
 
       res.json({
         success: true,
@@ -332,6 +452,19 @@ export class SelfCheckController {
 
     } catch (error) {
       console.error('Error fetching self-check result:', error);
+      try {
+        await AuditService.logSecurityEvent(
+          'SELF_CHECK_RESULT_FETCH_FAILED',
+          AuditLevel.ERROR,
+          `Failed to fetch self-check result: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          (req as any).user?.id || 'unknown',
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          { consultationId: (req as any).params?.consultationId }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
       res.status(500).json({
         success: false,
         message: 'Failed to fetch self-check result',
@@ -349,6 +482,15 @@ export class SelfCheckController {
 
       // Verify user is a patient
       if (userRole !== Role.PATIENT) {
+        await AuditService.logSecurityEvent(
+          'UNAUTHORIZED_SELF_CHECK_DELETE',
+          AuditLevel.WARNING,
+          'Non-patient attempted to delete self-check result',
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          { consultationId }
+        );
         return res.status(403).json({
           success: false,
           message: 'Only patients can delete self-check results'
@@ -368,6 +510,15 @@ export class SelfCheckController {
       });
 
       if (!selfCheckResult) {
+        await AuditService.logSecurityEvent(
+          'SELF_CHECK_RESULT_DELETE_NOT_FOUND',
+          AuditLevel.WARNING,
+          'Self-check result not found or no permission for deletion',
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          { consultationId }
+        );
         return res.status(404).json({
           success: false,
           message: 'Self-check result not found or you do not have permission to delete it'
@@ -382,15 +533,14 @@ export class SelfCheckController {
       });
 
       // Audit log
-      await AuditService.logUserActivity(
+      await AuditService.logDataModification(
+        'DELETE',
         userId,
-        'DELETE_SELF_CHECK_RESULT',
-        'DATA_MODIFICATION',
-        `Self-check result ${consultationId} deleted by user ${userId}`,
+        'HEALTH_SCAN',
+        consultationId,
         req.ip || 'unknown',
         req.get('User-Agent') || 'unknown',
-        'HEALTH_SCAN',
-        consultationId
+        { consultationId, deletedBy: userId, isSelfCheck: true, auditDescription: `Self-check result ${consultationId} deleted by user ${userId}` }
       );
 
       res.json({
@@ -400,6 +550,19 @@ export class SelfCheckController {
 
     } catch (error) {
       console.error('Error deleting self-check result:', error);
+      try {
+        await AuditService.logSecurityEvent(
+          'SELF_CHECK_RESULT_DELETE_FAILED',
+          AuditLevel.ERROR,
+          `Failed to delete self-check result: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          (req as any).user?.id || 'unknown',
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          { consultationId: (req as any).params?.consultationId }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
       res.status(500).json({
         success: false,
         message: 'Failed to delete self-check result',

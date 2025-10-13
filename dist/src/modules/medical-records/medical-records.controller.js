@@ -12,20 +12,27 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MedicalRecordsController = void 0;
 const client_1 = require("@prisma/client");
 const client_2 = require("@prisma/client");
-const audit_service_1 = require("../../shared/services/audit.service");
+const audit_service_1 = require("../audit/audit.service");
 const notification_service_1 = require("../notifications/notification.service");
 const prisma = new client_1.PrismaClient();
 class MedicalRecordsController {
     // Create medical record
     createMedicalRecord(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a;
+            var _a, _b;
             try {
                 const { patientId, consultationId, recordType, title, content, isPublic, isSensitive } = req.body;
                 const userId = req.user.id;
                 const userRole = req.user.role;
                 // Verify permissions
                 if (userRole === client_2.Role.PATIENT && userId !== patientId) {
+                    // Audit log for unauthorized access attempt
+                    yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_MEDICAL_RECORD_CREATION', client_2.AuditLevel.WARNING, `Patient attempted to create medical record for another patient`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedPatientId: patientId,
+                        requestingUserId: userId,
+                        userRole: userRole,
+                        accessAttempt: 'create_medical_record'
+                    });
                     return res.status(403).json({
                         success: false,
                         message: 'Patients can only create records for themselves'
@@ -35,6 +42,13 @@ class MedicalRecordsController {
                     // Check if doctor has access to this patient
                     const hasAccess = yield this.checkDoctorAccess(userId, patientId);
                     if (!hasAccess) {
+                        // Audit log for unauthorized access attempt
+                        yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_MEDICAL_RECORD_CREATION', client_2.AuditLevel.WARNING, `Doctor attempted to create medical record without patient access`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                            requestedPatientId: patientId,
+                            requestingDoctorId: userId,
+                            userRole: userRole,
+                            accessAttempt: 'create_medical_record'
+                        });
                         return res.status(403).json({
                             success: false,
                             message: 'You do not have access to this patient'
@@ -74,7 +88,19 @@ class MedicalRecordsController {
                 // Create default privacy settings
                 yield this.createDefaultPrivacySettings(medicalRecord.id);
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(userId, 'CREATE_MEDICAL_RECORD', 'DATA_MODIFICATION', `Medical record created for patient ${(_a = medicalRecord.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'MEDICAL_RECORD', medicalRecord.id.toString());
+                yield audit_service_1.AuditService.logDataModification('CREATE', userId, 'MEDICAL_RECORD', medicalRecord.id.toString(), req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    medicalRecordId: medicalRecord.id,
+                    patientId: medicalRecord.patientId,
+                    consultationId: medicalRecord.consultationId,
+                    recordType: medicalRecord.recordType,
+                    title: medicalRecord.title,
+                    isPublic: medicalRecord.isPublic,
+                    isSensitive: medicalRecord.isSensitive,
+                    createdBy: medicalRecord.createdBy,
+                    patientName: (_a = medicalRecord.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName,
+                    creatorName: medicalRecord.creator.doctorInfo ? `${medicalRecord.creator.doctorInfo.firstName} ${medicalRecord.creator.doctorInfo.lastName}` : medicalRecord.creator.email,
+                    auditDescription: `Medical record created for patient ${(_b = medicalRecord.patient.patientInfo) === null || _b === void 0 ? void 0 : _b.fullName}`
+                });
                 res.status(201).json({
                     success: true,
                     message: 'Medical record created successfully',
@@ -83,6 +109,23 @@ class MedicalRecordsController {
             }
             catch (error) {
                 console.error('Error creating medical record:', error);
+                // Audit log for failure
+                try {
+                    const { patientId, consultationId, recordType, title, content, isPublic, isSensitive } = req.body;
+                    const userId = req.user.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('MEDICAL_RECORD_CREATION_FAILED', client_2.AuditLevel.ERROR, `Failed to create medical record: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        patientId: patientId,
+                        consultationId: consultationId,
+                        recordType: recordType,
+                        title: title,
+                        isPublic: isPublic,
+                        isSensitive: isSensitive,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to create medical record',
@@ -101,6 +144,13 @@ class MedicalRecordsController {
                 const { recordType, isPublic, page = 1, limit = 10 } = req.query;
                 // Verify permissions
                 if (userRole === client_2.Role.PATIENT && userId !== patientId) {
+                    // Audit log for unauthorized access attempt
+                    yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_MEDICAL_RECORDS_ACCESS', client_2.AuditLevel.WARNING, `Patient attempted to access another patient's medical records`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedPatientId: patientId,
+                        requestingUserId: userId,
+                        userRole: userRole,
+                        accessAttempt: 'view_medical_records'
+                    });
                     return res.status(403).json({
                         success: false,
                         message: 'You can only view your own medical records'
@@ -110,6 +160,13 @@ class MedicalRecordsController {
                     // Check if doctor has access to this patient
                     const hasAccess = yield this.checkDoctorAccess(userId, patientId);
                     if (!hasAccess) {
+                        // Audit log for unauthorized access attempt
+                        yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_MEDICAL_RECORDS_ACCESS', client_2.AuditLevel.WARNING, `Doctor attempted to access patient medical records without permission`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                            requestedPatientId: patientId,
+                            requestingDoctorId: userId,
+                            userRole: userRole,
+                            accessAttempt: 'view_medical_records'
+                        });
                         return res.status(403).json({
                             success: false,
                             message: 'You do not have access to this patient'
@@ -158,6 +215,17 @@ class MedicalRecordsController {
                     }),
                     prisma.patientMedicalHistory.count({ where: whereClause })
                 ]);
+                // Audit log for successful access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_PATIENT_MEDICAL_RECORDS', userId, 'MEDICAL_RECORD', patientId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    patientId: patientId,
+                    recordType: recordType,
+                    isPublic: isPublic,
+                    page: Number(page),
+                    limit: Number(limit),
+                    totalRecords: total,
+                    userRole: userRole,
+                    auditDescription: `Viewed ${total} medical records for patient ${patientId}`
+                });
                 res.json({
                     success: true,
                     data: records,
@@ -171,6 +239,24 @@ class MedicalRecordsController {
             }
             catch (error) {
                 console.error('Error fetching medical records:', error);
+                // Audit log for failure
+                try {
+                    const { patientId } = req.params;
+                    const { recordType, isPublic, page, limit } = req.query;
+                    const userId = req.user.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('MEDICAL_RECORDS_FETCH_FAILED', client_2.AuditLevel.ERROR, `Failed to fetch medical records: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        patientId: patientId,
+                        recordType: recordType,
+                        isPublic: isPublic,
+                        page: page,
+                        limit: limit,
+                        userRole: req.user.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch medical records',
@@ -189,6 +275,13 @@ class MedicalRecordsController {
                 const userRole = req.user.role;
                 // Verify permissions
                 if (userRole === client_2.Role.PATIENT && userId !== patientId) {
+                    // Audit log for unauthorized access attempt
+                    yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_MEDICAL_RECORDS_SUMMARY_ACCESS', client_2.AuditLevel.WARNING, `Patient attempted to access another patient's medical records summary`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        requestedPatientId: patientId,
+                        requestingUserId: userId,
+                        userRole: userRole,
+                        accessAttempt: 'view_medical_records_summary'
+                    });
                     return res.status(403).json({
                         success: false,
                         message: 'You can only view your own medical records'
@@ -198,6 +291,13 @@ class MedicalRecordsController {
                     // Check if doctor has access to this patient
                     const hasAccess = yield this.checkDoctorAccess(userId, patientId);
                     if (!hasAccess) {
+                        // Audit log for unauthorized access attempt
+                        yield audit_service_1.AuditService.logSecurityEvent('UNAUTHORIZED_MEDICAL_RECORDS_SUMMARY_ACCESS', client_2.AuditLevel.WARNING, `Doctor attempted to access patient medical records summary without permission`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                            requestedPatientId: patientId,
+                            requestingDoctorId: userId,
+                            userRole: userRole,
+                            accessAttempt: 'view_medical_records_summary'
+                        });
                         return res.status(403).json({
                             success: false,
                             message: 'You do not have access to this patient'
@@ -275,6 +375,15 @@ class MedicalRecordsController {
                 // Build complete patient info
                 const completePatientInfo = Object.assign(Object.assign({}, patientInfo), { emergencyContact,
                     insuranceInfo });
+                // Audit log for successful access
+                yield audit_service_1.AuditService.logDataAccess('VIEW_PATIENT_MEDICAL_RECORDS_SUMMARY', userId, 'MEDICAL_RECORD', patientId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    patientId: patientId,
+                    totalConsultations: consultations.length,
+                    totalHealthScans: healthScans.length,
+                    totalMedicalRecords: medicalHistory.length,
+                    userRole: userRole,
+                    auditDescription: `Viewed medical records summary for patient ${patientId}`
+                });
                 res.json({
                     success: true,
                     data: {
@@ -301,6 +410,19 @@ class MedicalRecordsController {
             }
             catch (error) {
                 console.error('Error fetching medical records summary:', error);
+                // Audit log for failure
+                try {
+                    const { patientId } = req.params;
+                    const userId = req.user.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('MEDICAL_RECORDS_SUMMARY_FETCH_FAILED', client_2.AuditLevel.ERROR, `Failed to fetch medical records summary: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        patientId: patientId,
+                        userRole: req.user.role,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to fetch medical records summary',
@@ -346,7 +468,20 @@ class MedicalRecordsController {
                     }
                 });
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(userId, 'UPDATE_MEDICAL_RECORD', 'DATA_MODIFICATION', `Medical record ${recordId} updated`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'MEDICAL_RECORD', recordId);
+                yield audit_service_1.AuditService.logDataModification('UPDATE', userId, 'MEDICAL_RECORD', recordId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    medicalRecordId: recordId,
+                    patientId: medicalRecord.patientId,
+                    consultationId: medicalRecord.consultationId,
+                    recordType: medicalRecord.recordType,
+                    oldTitle: medicalRecord.title,
+                    newTitle: title,
+                    oldIsPublic: medicalRecord.isPublic,
+                    newIsPublic: isPublic,
+                    oldIsSensitive: medicalRecord.isSensitive,
+                    newIsSensitive: isSensitive,
+                    updatedBy: userId,
+                    auditDescription: `Medical record ${recordId} updated`
+                });
                 res.json({
                     success: true,
                     message: 'Medical record updated successfully',
@@ -355,6 +490,23 @@ class MedicalRecordsController {
             }
             catch (error) {
                 console.error('Error updating medical record:', error);
+                // Audit log for failure
+                try {
+                    const { recordId } = req.params;
+                    const { title, content, isPublic, isSensitive } = req.body;
+                    const userId = req.user.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('MEDICAL_RECORD_UPDATE_FAILED', client_2.AuditLevel.ERROR, `Failed to update medical record: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        recordId: recordId,
+                        title: title,
+                        content: content,
+                        isPublic: isPublic,
+                        isSensitive: isSensitive,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to update medical record',
@@ -408,7 +560,13 @@ class MedicalRecordsController {
                     });
                 }
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(userId, 'UPDATE_PRIVACY_SETTINGS', 'DATA_MODIFICATION', `Privacy settings updated for medical record ${recordId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'MEDICAL_RECORD', recordId);
+                yield audit_service_1.AuditService.logDataModification('UPDATE', userId, 'MEDICAL_RECORD', recordId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    medicalRecordId: recordId,
+                    patientId: medicalRecord.patientId,
+                    privacySettings: privacySettings,
+                    updatedBy: userId,
+                    auditDescription: `Privacy settings updated for medical record ${recordId}`
+                });
                 res.json({
                     success: true,
                     message: 'Privacy settings updated successfully'
@@ -416,6 +574,20 @@ class MedicalRecordsController {
             }
             catch (error) {
                 console.error('Error updating privacy settings:', error);
+                // Audit log for failure
+                try {
+                    const { recordId } = req.params;
+                    const { privacySettings } = req.body;
+                    const userId = req.user.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('MEDICAL_RECORD_PRIVACY_UPDATE_FAILED', client_2.AuditLevel.ERROR, `Failed to update privacy settings: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        recordId: recordId,
+                        privacySettings: privacySettings,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to update privacy settings',
@@ -470,7 +642,15 @@ class MedicalRecordsController {
                     }
                 });
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(userId, 'SHARE_MEDICAL_RECORD', 'DATA_ACCESS', `Medical record ${recordId} shared with doctor ${doctorId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'MEDICAL_RECORD', recordId);
+                yield audit_service_1.AuditService.logDataAccess('SHARE_MEDICAL_RECORD', userId, 'MEDICAL_RECORD', recordId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    medicalRecordId: recordId,
+                    patientId: medicalRecord.patientId,
+                    sharedWithDoctorId: doctorId,
+                    accessLevel: accessLevel,
+                    expiresAt: expiresAt,
+                    sharedBy: userId,
+                    auditDescription: `Medical record ${recordId} shared with doctor ${doctorId}`
+                });
                 // Send notification to doctor
                 yield notification_service_1.NotificationService.notifyMedicalRecordShared(recordId, doctorId, medicalRecord.patientId, medicalRecord.recordType);
                 res.status(201).json({
@@ -481,6 +661,22 @@ class MedicalRecordsController {
             }
             catch (error) {
                 console.error('Error sharing medical record:', error);
+                // Audit log for failure
+                try {
+                    const { recordId } = req.params;
+                    const { doctorId, accessLevel, expiresAt } = req.body;
+                    const userId = req.user.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('MEDICAL_RECORD_SHARE_FAILED', client_2.AuditLevel.ERROR, `Failed to share medical record: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        recordId: recordId,
+                        doctorId: doctorId,
+                        accessLevel: accessLevel,
+                        expiresAt: expiresAt,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to share medical record',
@@ -517,7 +713,19 @@ class MedicalRecordsController {
                     where: { id: recordId }
                 });
                 // Audit log
-                yield audit_service_1.AuditService.logUserActivity(userId, 'DELETE_MEDICAL_RECORD', 'DATA_MODIFICATION', `Medical record ${recordId} deleted`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'MEDICAL_RECORD', recordId);
+                yield audit_service_1.AuditService.logDataModification('DELETE', userId, 'MEDICAL_RECORD', recordId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                    medicalRecordId: recordId,
+                    patientId: medicalRecord.patientId,
+                    consultationId: medicalRecord.consultationId,
+                    recordType: medicalRecord.recordType,
+                    title: medicalRecord.title,
+                    isPublic: medicalRecord.isPublic,
+                    isSensitive: medicalRecord.isSensitive,
+                    createdBy: medicalRecord.createdBy,
+                    deletedBy: userId,
+                    deletedAt: new Date(),
+                    auditDescription: `Medical record ${recordId} deleted`
+                });
                 res.json({
                     success: true,
                     message: 'Medical record deleted successfully'
@@ -525,6 +733,18 @@ class MedicalRecordsController {
             }
             catch (error) {
                 console.error('Error deleting medical record:', error);
+                // Audit log for failure
+                try {
+                    const { recordId } = req.params;
+                    const userId = req.user.id;
+                    yield audit_service_1.AuditService.logSecurityEvent('MEDICAL_RECORD_DELETE_FAILED', client_2.AuditLevel.ERROR, `Failed to delete medical record: ${error instanceof Error ? error.message : 'Unknown error'}`, userId, req.ip || 'unknown', req.get('User-Agent') || 'unknown', {
+                        recordId: recordId,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
+                catch (auditError) {
+                    console.error('Failed to log audit event:', auditError);
+                }
                 res.status(500).json({
                     success: false,
                     message: 'Failed to delete medical record',

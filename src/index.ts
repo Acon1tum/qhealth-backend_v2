@@ -29,6 +29,7 @@ import { patientsRoutes } from './modules/patients/patients.routes';
 import labRequestsRoutes from './modules/lab-requests/lab-requests.routes';
 import { notificationsRoutes } from './modules/notifications/notifications.routes';
 import { superAdminRoutes } from './modules/super-admin/super-admin.routes';
+import auditRoutes from './modules/audit/audit.routes';
 import { setSocketIOInstance } from './modules/notifications/notification.service';
 import { setIOInstance } from './modules/notifications/notifications.controller';
 
@@ -36,6 +37,8 @@ import { setIOInstance } from './modules/notifications/notifications.controller'
 import { errorHandler, notFoundHandler } from './shared/middleware/error-handler';
 import { sanitizeInput, xssProtection, sqlInjectionProtection } from './utils/validation';
 import { authenticateToken, requireAuth } from './shared/middleware/auth-middleware';
+import { AuditService } from './modules/audit/audit.service';
+import { AuditLevel } from '@prisma/client';
 
 // Import types
 import { Request, Response, NextFunction } from 'express';
@@ -125,60 +128,205 @@ app.use(express.json({ limit: securityConfig.requestLimits.json }));
 app.use(express.urlencoded({ extended: true, limit: securityConfig.requestLimits.urlencoded }));
 
 // Root endpoint for basic connectivity test
-app.get('/', (req: Request, res: Response) => {
-  res.status(200).json({
-    message: 'QHealth Backend API is running',
-    timestamp: new Date().toISOString(),
-    environment: securityConfig.environment,
-    version: process.env.npm_package_version || '1.0.0',
-  });
+app.get('/', async (req: Request, res: Response) => {
+  try {
+    // Audit log for root endpoint access
+    await AuditService.logDataAccess(
+      'ROOT_ENDPOINT_ACCESS',
+      'anonymous',
+      'SYSTEM',
+      'root',
+      req.ip || 'unknown',
+      req.get('User-Agent') || 'unknown',
+      {
+        environment: securityConfig.environment,
+        version: process.env.npm_package_version || '1.0.0',
+        auditDescription: 'Root endpoint accessed - API status check'
+      }
+    );
+    
+    res.status(200).json({
+      message: 'QHealth Backend API is running',
+      timestamp: new Date().toISOString(),
+      environment: securityConfig.environment,
+      version: process.env.npm_package_version || '1.0.0',
+    });
+  } catch (error) {
+    console.error('Error in root endpoint:', error);
+    res.status(200).json({
+      message: 'QHealth Backend API is running',
+      timestamp: new Date().toISOString(),
+      environment: securityConfig.environment,
+      version: process.env.npm_package_version || '1.0.0',
+    });
+  }
 });
 
 // Health check endpoint with security headers
-app.get('/health', (req: Request, res: Response) => {
-  // Set security headers for health check
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  
-  res.status(200).json({
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: securityConfig.environment,
-    version: process.env.npm_package_version || '1.0.0',
-  });
+app.get('/health', async (req: Request, res: Response) => {
+  try {
+    // Set security headers for health check
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    const uptime = process.uptime();
+    const healthData = {
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      uptime: uptime,
+      environment: securityConfig.environment,
+      version: process.env.npm_package_version || '1.0.0',
+    };
+    
+    // Audit log for health check access
+    await AuditService.logDataAccess(
+      'HEALTH_CHECK_ACCESS',
+      'system',
+      'SYSTEM',
+      'health',
+      req.ip || 'unknown',
+      req.get('User-Agent') || 'unknown',
+      {
+        uptime: uptime,
+        environment: securityConfig.environment,
+        version: process.env.npm_package_version || '1.0.0',
+        auditDescription: 'System health check performed'
+      }
+    );
+    
+    res.status(200).json(healthData);
+  } catch (error) {
+    console.error('Error in health check:', error);
+    res.status(200).json({
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: securityConfig.environment,
+      version: process.env.npm_package_version || '1.0.0',
+    });
+  }
 });
 
 // Security status endpoint (for monitoring)
-app.get('/security-status', (req: Request, res: Response) => {
-  res.status(200).json({
-    success: true,
-    data: {
-      environment: securityConfig.environment,
-      securityFeatures: {
-        cors: securityConfig.cors.origin.length > 0,
-        rateLimiting: securityConfig.rateLimit.max > 0,
-        passwordPolicy: securityConfig.password.minLength >= 8,
-        jwtExpiration: securityConfig.jwt.accessToken.expiresIn,
-        sessionTimeout: securityConfig.session.inactivityTimeout,
+app.get('/security-status', async (req: Request, res: Response) => {
+  try {
+    const securityData = {
+      success: true,
+      data: {
+        environment: securityConfig.environment,
+        securityFeatures: {
+          cors: securityConfig.cors.origin.length > 0,
+          rateLimiting: securityConfig.rateLimit.max > 0,
+          passwordPolicy: securityConfig.password.minLength >= 8,
+          jwtExpiration: securityConfig.jwt.accessToken.expiresIn,
+          sessionTimeout: securityConfig.session.inactivityTimeout,
+        },
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
-    },
-  });
+    };
+    
+    // Audit log for security status access
+    await AuditService.logDataAccess(
+      'SECURITY_STATUS_ACCESS',
+      'system',
+      'SYSTEM',
+      'security-status',
+      req.ip || 'unknown',
+      req.get('User-Agent') || 'unknown',
+      {
+        environment: securityConfig.environment,
+        corsEnabled: securityConfig.cors.origin.length > 0,
+        rateLimitMax: securityConfig.rateLimit.max,
+        passwordMinLength: securityConfig.password.minLength,
+        auditDescription: 'Security status endpoint accessed'
+      }
+    );
+    
+    res.status(200).json(securityData);
+  } catch (error) {
+    console.error('Error in security status:', error);
+    res.status(200).json({
+      success: true,
+      data: {
+        environment: securityConfig.environment,
+        securityFeatures: {
+          cors: securityConfig.cors.origin.length > 0,
+          rateLimiting: securityConfig.rateLimit.max > 0,
+          passwordPolicy: securityConfig.password.minLength >= 8,
+          jwtExpiration: securityConfig.jwt.accessToken.expiresIn,
+          sessionTimeout: securityConfig.session.inactivityTimeout,
+        },
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
 });
 
 // Protected admin endpoint (demonstrates auth middleware)
-app.get('/admin/security-audit', authenticateToken, requireAuth, (req: Request, res: Response) => {
-  res.status(200).json({
-    success: true,
-    message: 'Admin access granted',
-    data: {
-      user: (req as any).user,
-      timestamp: new Date().toISOString(),
-      securityLevel: 'admin',
-    },
-  });
+app.get('/admin/security-audit', authenticateToken, requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    const userRole = (req as any).user?.role;
+    
+    const adminData = {
+      success: true,
+      message: 'Admin access granted',
+      data: {
+        user: (req as any).user,
+        timestamp: new Date().toISOString(),
+        securityLevel: 'admin',
+      },
+    };
+    
+    // Audit log for admin endpoint access
+    await AuditService.logDataAccess(
+      'ADMIN_SECURITY_AUDIT_ACCESS',
+      userId,
+      'SYSTEM',
+      'admin-security-audit',
+      req.ip || 'unknown',
+      req.get('User-Agent') || 'unknown',
+      {
+        userId: userId,
+        userRole: userRole,
+        securityLevel: 'admin',
+        auditDescription: `Admin security audit endpoint accessed by ${userRole} user`
+      }
+    );
+    
+    res.status(200).json(adminData);
+  } catch (error) {
+    console.error('Error in admin security audit:', error);
+    
+    // Audit log for admin endpoint access failure
+    try {
+      const userId = (req as any).user?.id;
+      await AuditService.logSecurityEvent(
+        'ADMIN_SECURITY_AUDIT_FAILED',
+        AuditLevel.ERROR,
+        `Admin security audit endpoint failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        userId,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          error: error instanceof Error ? error.message : 'Unknown error'
+        }
+      );
+    } catch (auditError) {
+      console.error('Failed to log audit event:', auditError);
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: 'Admin access granted',
+      data: {
+        user: (req as any).user,
+        timestamp: new Date().toISOString(),
+        securityLevel: 'admin',
+      },
+    });
+  }
 });
 
 // API Routes with security middleware
@@ -196,6 +344,7 @@ app.use('/api/patients', patientsRoutes);
 app.use('/api/lab-requests', labRequestsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/super-admin', superAdminRoutes);
+app.use('/api/audit', auditRoutes);
 
 // Serve static files with enhanced security
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {

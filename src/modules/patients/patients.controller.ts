@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
-import { PrismaClient, Role, Sex } from '@prisma/client';
+import { PrismaClient, Role, Sex, AuditCategory, AuditLevel } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { securityConfig } from '../../config/security.config';
 import { AuthService } from '../../shared/services/auth.service';
+import { AuditService } from '../audit/audit.service';
 
 const prisma = new PrismaClient();
 
@@ -68,6 +69,26 @@ export class PatientsController {
         }),
       ]);
 
+      // Audit log for successful access
+      const userId = (req as any).user?.id || 'anonymous';
+      await AuditService.logDataAccess(
+        'LIST_PATIENTS',
+        userId,
+        'PATIENT',
+        'list',
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          page: page,
+          limit: limit,
+          search: search,
+          organizationId: organizationId,
+          totalPatients: total,
+          userRole: (req as any).user?.role,
+          auditDescription: `Listed ${total} patients (page ${page} of ${Math.ceil(total / limit) || 1})`
+        }
+      );
+
       res.json({
         success: true,
         data: {
@@ -80,6 +101,32 @@ export class PatientsController {
       });
     } catch (error) {
       console.error('Error listing patients:', error);
+      
+      // Audit log for failure
+      try {
+        const userId = (req as any).user?.id || 'anonymous';
+        const { page, limit, search, organizationId } = req.query;
+        
+        await AuditService.logSecurityEvent(
+          'PATIENTS_LIST_FAILED',
+          AuditLevel.ERROR,
+          `Failed to list patients: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            page: page,
+            limit: limit,
+            search: search,
+            organizationId: organizationId,
+            userRole: (req as any).user?.role,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({ success: false, message: 'Failed to list patients' });
     }
   }
@@ -107,12 +154,70 @@ export class PatientsController {
       });
 
       if (!patient) {
+        // Audit log for patient not found
+        const userId = (req as any).user?.id || 'anonymous';
+        await AuditService.logSecurityEvent(
+          'PATIENT_NOT_FOUND',
+          AuditLevel.WARNING,
+          `Patient not found: ${id}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            requestedPatientId: id,
+            userRole: (req as any).user?.role
+          }
+        );
+        
         return res.status(404).json({ success: false, message: 'Patient not found' });
       }
+
+      // Audit log for successful access
+      const userId = (req as any).user?.id || 'anonymous';
+      await AuditService.logDataAccess(
+        'VIEW_PATIENT',
+        userId,
+        'PATIENT',
+        id,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          patientId: id,
+          patientEmail: patient.email,
+          patientName: patient.patientInfo?.fullName,
+          organizationId: patient.organizationId,
+          organizationName: patient.organization?.name,
+          userRole: (req as any).user?.role,
+          auditDescription: `Viewed patient: ${patient.patientInfo?.fullName || patient.email}`
+        }
+      );
 
       res.json({ success: true, data: patient });
     } catch (error) {
       console.error('Error fetching patient:', error);
+      
+      // Audit log for failure
+      try {
+        const { id } = req.params;
+        const userId = (req as any).user?.id || 'anonymous';
+        
+        await AuditService.logSecurityEvent(
+          'PATIENT_FETCH_FAILED',
+          AuditLevel.ERROR,
+          `Failed to fetch patient: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            patientId: id,
+            userRole: (req as any).user?.role,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({ success: false, message: 'Failed to fetch patient' });
     }
   }
@@ -220,9 +325,83 @@ export class PatientsController {
         select: { id: true, email: true, organizationId: true },
       });
 
+      // Audit log for successful creation
+      const userId = (req as any).user?.id || 'system';
+      await AuditService.logDataModification(
+        'CREATE',
+        userId,
+        'PATIENT',
+        user.id,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          patientId: user.id,
+          patientEmail: email.toLowerCase(),
+          patientName: fullName,
+          organizationId: organizationId,
+          gender: gender,
+          dateOfBirth: dateOfBirth,
+          contactNumber: contactNumber,
+          address: address,
+          bloodType: bloodType,
+          philHealthId: philHealthId,
+          philHealthStatus: philHealthStatus,
+          hasEmergencyContact: !!(emergencyContactName && emergencyContactNumber),
+          hasInsuranceInfo: !!(insuranceProviderName && insurancePolicyNumber && insuranceContact),
+          createdBy: userId,
+          auditDescription: `Patient created: ${fullName} (${email})`
+        }
+      );
+
       res.status(201).json({ success: true, data: user, message: 'Patient created successfully' });
     } catch (error) {
       console.error('Error creating patient:', error);
+      
+      // Audit log for failure
+      try {
+        const {
+          email,
+          fullName,
+          organizationId,
+          gender,
+          dateOfBirth,
+          contactNumber,
+          address,
+          bloodType,
+          philHealthId,
+          emergencyContactName,
+          insuranceProviderName
+        } = req.body || {};
+        const userId = (req as any).user?.id || 'system';
+        const message = (error as any)?.message || 'Failed to create patient';
+        
+        await AuditService.logSecurityEvent(
+          'PATIENT_CREATION_FAILED',
+          AuditLevel.ERROR,
+          `Failed to create patient: ${message}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            patientEmail: email,
+            patientName: fullName,
+            organizationId: organizationId,
+            gender: gender,
+            dateOfBirth: dateOfBirth,
+            contactNumber: contactNumber,
+            address: address,
+            bloodType: bloodType,
+            philHealthId: philHealthId,
+            hasEmergencyContact: !!(emergencyContactName),
+            hasInsuranceInfo: !!(insuranceProviderName),
+            createdBy: userId,
+            error: message
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       const message = (error as any)?.message || 'Failed to create patient';
       // Handle Prisma unique constraint errors gracefully
       if (message.includes('Unique constraint') || message.includes('Unique constraint failed')) {
@@ -266,7 +445,24 @@ export class PatientsController {
       } = req.body || {};
 
       const user = await prisma.user.findFirst({ where: { id, role: Role.PATIENT }, select: { id: true } });
-      if (!user) return res.status(404).json({ success: false, message: 'Patient not found' });
+      if (!user) {
+        // Audit log for patient not found
+        const userId = (req as any).user?.id || 'system';
+        await AuditService.logSecurityEvent(
+          'PATIENT_UPDATE_NOT_FOUND',
+          AuditLevel.WARNING,
+          `Patient not found for update: ${id}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            requestedPatientId: id,
+            userRole: (req as any).user?.role
+          }
+        );
+        
+        return res.status(404).json({ success: false, message: 'Patient not found' });
+      }
 
       const updated = await prisma.user.update({
         where: { id },
@@ -352,9 +548,96 @@ export class PatientsController {
         select: { id: true },
       });
 
+      // Audit log for successful update
+      const userId = (req as any).user?.id || 'system';
+      await AuditService.logDataModification(
+        'UPDATE',
+        userId,
+        'PATIENT',
+        id,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          patientId: id,
+          organizationId: organizationId,
+          fullName: fullName,
+          gender: gender,
+          dateOfBirth: dateOfBirth,
+          contactNumber: contactNumber,
+          address: address,
+          weight: weight,
+          height: height,
+          bloodType: bloodType,
+          medicalHistory: medicalHistory,
+          allergies: allergies,
+          medications: medications,
+          philHealthId: philHealthId,
+          philHealthStatus: philHealthStatus,
+          hasEmergencyContact: !!(emergencyContactName && emergencyContactNumber),
+          hasInsuranceInfo: !!(insuranceProviderName && insurancePolicyNumber && insuranceContact),
+          updatedBy: userId,
+          auditDescription: `Patient updated: ${id}`
+        }
+      );
+
       res.json({ success: true, data: updated, message: 'Patient updated successfully' });
     } catch (error) {
       console.error('Error updating patient:', error);
+      
+      // Audit log for failure
+      try {
+        const { id } = req.params;
+        const {
+          organizationId,
+          fullName,
+          gender,
+          dateOfBirth,
+          contactNumber,
+          address,
+          weight,
+          height,
+          bloodType,
+          medicalHistory,
+          allergies,
+          medications,
+          philHealthId,
+          emergencyContactName,
+          insuranceProviderName
+        } = req.body || {};
+        const userId = (req as any).user?.id || 'system';
+        
+        await AuditService.logSecurityEvent(
+          'PATIENT_UPDATE_FAILED',
+          AuditLevel.ERROR,
+          `Failed to update patient: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            patientId: id,
+            organizationId: organizationId,
+            fullName: fullName,
+            gender: gender,
+            dateOfBirth: dateOfBirth,
+            contactNumber: contactNumber,
+            address: address,
+            weight: weight,
+            height: height,
+            bloodType: bloodType,
+            medicalHistory: medicalHistory,
+            allergies: allergies,
+            medications: medications,
+            philHealthId: philHealthId,
+            hasEmergencyContact: !!(emergencyContactName),
+            hasInsuranceInfo: !!(insuranceProviderName),
+            updatedBy: userId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({ success: false, message: 'Failed to update patient' });
     }
   }
@@ -364,7 +647,24 @@ export class PatientsController {
     try {
       const { id } = req.params;
       const user = await prisma.user.findFirst({ where: { id, role: Role.PATIENT }, select: { id: true } });
-      if (!user) return res.status(404).json({ success: false, message: 'Patient not found' });
+      if (!user) {
+        // Audit log for patient not found
+        const userId = (req as any).user?.id || 'system';
+        await AuditService.logSecurityEvent(
+          'PATIENT_DELETE_NOT_FOUND',
+          AuditLevel.WARNING,
+          `Patient not found for deletion: ${id}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            requestedPatientId: id,
+            userRole: (req as any).user?.role
+          }
+        );
+        
+        return res.status(404).json({ success: false, message: 'Patient not found' });
+      }
 
       // Clean up related records with safe order
       await prisma.$transaction([
@@ -380,9 +680,59 @@ export class PatientsController {
         prisma.user.delete({ where: { id } }),
       ]);
 
+      // Audit log for successful deletion
+      const userId = (req as any).user?.id || 'system';
+      await AuditService.logDataModification(
+        'DELETE',
+        userId,
+        'PATIENT',
+        id,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          patientId: id,
+          deletedBy: userId,
+          deletedAt: new Date(),
+          cascadeDeletedRecords: [
+            'consultations',
+            'appointmentRequests',
+            'prescriptions',
+            'diagnoses',
+            'patientMedicalHistory',
+            'emergencyContacts',
+            'insuranceInfos',
+            'patientInfo'
+          ],
+          auditDescription: `Patient deleted: ${id}`
+        }
+      );
+
       res.json({ success: true, message: 'Patient deleted successfully' });
     } catch (error) {
       console.error('Error deleting patient:', error);
+      
+      // Audit log for failure
+      try {
+        const { id } = req.params;
+        const userId = (req as any).user?.id || 'system';
+        
+        await AuditService.logSecurityEvent(
+          'PATIENT_DELETE_FAILED',
+          AuditLevel.ERROR,
+          `Failed to delete patient: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            patientId: id,
+            deletedBy: userId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({ success: false, message: 'Failed to delete patient' });
     }
   }
@@ -396,7 +746,24 @@ export class PatientsController {
       const skip = (page - 1) * limit;
 
       const patient = await prisma.user.findFirst({ where: { id, role: Role.PATIENT }, select: { id: true } });
-      if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+      if (!patient) {
+        // Audit log for patient not found
+        const userId = (req as any).user?.id || 'anonymous';
+        await AuditService.logSecurityEvent(
+          'PATIENT_MEDICAL_HISTORY_NOT_FOUND',
+          AuditLevel.WARNING,
+          `Patient not found for medical history: ${id}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            requestedPatientId: id,
+            userRole: (req as any).user?.role
+          }
+        );
+        
+        return res.status(404).json({ success: false, message: 'Patient not found' });
+      }
 
       const [total, medicalHistory] = await Promise.all([
         prisma.patientMedicalHistory.count({ where: { patientId: id } }),
@@ -441,6 +808,25 @@ export class PatientsController {
         }),
       ]);
 
+      // Audit log for successful access
+      const userId = (req as any).user?.id || 'anonymous';
+      await AuditService.logDataAccess(
+        'VIEW_PATIENT_MEDICAL_HISTORY',
+        userId,
+        'PATIENT',
+        id,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          patientId: id,
+          page: page,
+          limit: limit,
+          totalMedicalRecords: total,
+          userRole: (req as any).user?.role,
+          auditDescription: `Viewed ${total} medical history records for patient ${id} (page ${page})`
+        }
+      );
+
       res.json({
         success: true,
         data: {
@@ -453,6 +839,33 @@ export class PatientsController {
       });
     } catch (error) {
       console.error('Error fetching patient medical history:', error);
+      
+      // Audit log for failure
+      try {
+        const { id } = req.params;
+        const page = req.query.page as string;
+        const limit = req.query.limit as string;
+        const userId = (req as any).user?.id || 'anonymous';
+        
+        await AuditService.logSecurityEvent(
+          'PATIENT_MEDICAL_HISTORY_FETCH_FAILED',
+          AuditLevel.ERROR,
+          `Failed to fetch patient medical history: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            patientId: id,
+            page: page,
+            limit: limit,
+            userRole: (req as any).user?.role,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({ success: false, message: 'Failed to fetch patient medical history' });
     }
   }
@@ -466,7 +879,24 @@ export class PatientsController {
       const skip = (page - 1) * limit;
 
       const patient = await prisma.user.findFirst({ where: { id, role: Role.PATIENT }, select: { id: true } });
-      if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+      if (!patient) {
+        // Audit log for patient not found
+        const userId = (req as any).user?.id || 'anonymous';
+        await AuditService.logSecurityEvent(
+          'PATIENT_APPOINTMENTS_NOT_FOUND',
+          AuditLevel.WARNING,
+          `Patient not found for appointments: ${id}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            requestedPatientId: id,
+            userRole: (req as any).user?.role
+          }
+        );
+        
+        return res.status(404).json({ success: false, message: 'Patient not found' });
+      }
 
       const [total, appointments] = await Promise.all([
         prisma.appointmentRequest.count({ where: { patientId: id } }),
@@ -500,6 +930,25 @@ export class PatientsController {
         }),
       ]);
 
+      // Audit log for successful access
+      const userId = (req as any).user?.id || 'anonymous';
+      await AuditService.logDataAccess(
+        'VIEW_PATIENT_APPOINTMENTS',
+        userId,
+        'PATIENT',
+        id,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown',
+        {
+          patientId: id,
+          page: page,
+          limit: limit,
+          totalAppointments: total,
+          userRole: (req as any).user?.role,
+          auditDescription: `Viewed ${total} appointments for patient ${id} (page ${page})`
+        }
+      );
+
       res.json({
         success: true,
         data: {
@@ -512,6 +961,33 @@ export class PatientsController {
       });
     } catch (error) {
       console.error('Error fetching patient appointments:', error);
+      
+      // Audit log for failure
+      try {
+        const { id } = req.params;
+        const page = req.query.page as string;
+        const limit = req.query.limit as string;
+        const userId = (req as any).user?.id || 'anonymous';
+        
+        await AuditService.logSecurityEvent(
+          'PATIENT_APPOINTMENTS_FETCH_FAILED',
+          AuditLevel.ERROR,
+          `Failed to fetch patient appointments: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          userId,
+          req.ip || 'unknown',
+          req.get('User-Agent') || 'unknown',
+          {
+            patientId: id,
+            page: page,
+            limit: limit,
+            userRole: (req as any).user?.role,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        );
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError);
+      }
+      
       res.status(500).json({ success: false, message: 'Failed to fetch patient appointments' });
     }
   }
