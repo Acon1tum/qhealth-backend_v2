@@ -13,6 +13,7 @@ exports.AppointmentsController = void 0;
 const client_1 = require("@prisma/client");
 const client_2 = require("@prisma/client");
 const audit_service_1 = require("../../shared/services/audit.service");
+const notification_service_1 = require("../notifications/notification.service");
 const prisma = new client_1.PrismaClient();
 class AppointmentsController {
     // Create appointment request
@@ -117,6 +118,8 @@ class AppointmentsController {
                 });
                 // Audit log
                 yield audit_service_1.AuditService.logUserActivity(userId, 'CREATE_APPOINTMENT_REQUEST', 'USER_ACTIVITY', `Appointment request created for ${(_a = appointment.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName} with Dr. ${(_b = appointment.doctor.doctorInfo) === null || _b === void 0 ? void 0 : _b.firstName} ${(_c = appointment.doctor.doctorInfo) === null || _c === void 0 ? void 0 : _c.lastName}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'APPOINTMENT_REQUEST', appointment.id.toString());
+                // Send notifications
+                yield notification_service_1.NotificationService.notifyAppointmentCreated(appointment.id, doctorId, patientId, parsedDate, requestedTime);
                 res.status(201).json({
                     success: true,
                     message: 'Appointment request created successfully',
@@ -387,6 +390,13 @@ class AppointmentsController {
                 }
                 // Audit log
                 yield audit_service_1.AuditService.logUserActivity(userId, 'UPDATE_APPOINTMENT_STATUS', 'USER_ACTIVITY', `Appointment ${appointmentId} status updated to ${status}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'APPOINTMENT_REQUEST', appointmentId);
+                // Send notifications
+                if (status === client_2.AppointmentStatus.CONFIRMED) {
+                    yield notification_service_1.NotificationService.notifyAppointmentConfirmed(appointmentId, updatedAppointment.patientId, updatedAppointment.doctorId, updatedAppointment.requestedDate, updatedAppointment.requestedTime);
+                }
+                else if (status === client_2.AppointmentStatus.REJECTED) {
+                    yield notification_service_1.NotificationService.notifyAppointmentRejected(appointmentId, updatedAppointment.patientId, updatedAppointment.doctorId, notes || 'Your appointment request has been declined');
+                }
                 res.json({
                     success: true,
                     message: `Appointment ${status.toLowerCase()} successfully`,
@@ -451,6 +461,9 @@ class AppointmentsController {
                 });
                 // Audit log
                 yield audit_service_1.AuditService.logUserActivity(userId, 'REQUEST_RESCHEDULE', 'USER_ACTIVITY', `Reschedule requested for appointment ${appointmentId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'RESCHEDULE_REQUEST', rescheduleRequest.id.toString());
+                // Send notification to the other party
+                const recipientId = userRole === client_2.Role.PATIENT ? appointment.doctorId : appointment.patientId;
+                yield notification_service_1.NotificationService.notifyRescheduleRequest(rescheduleRequest.id, recipientId, appointment.requestedDate, appointment.requestedTime, newDate, newTime);
                 res.status(201).json({
                     success: true,
                     message: 'Reschedule request created successfully',
@@ -513,6 +526,9 @@ class AppointmentsController {
                             updatedAt: new Date()
                         }
                     });
+                    // Notify both parties about rescheduling
+                    yield notification_service_1.NotificationService.notifyAppointmentRescheduled(rescheduleRequest.appointmentId, rescheduleRequest.appointment.patientId, rescheduleRequest.newDate, rescheduleRequest.newTime);
+                    yield notification_service_1.NotificationService.notifyAppointmentRescheduled(rescheduleRequest.appointmentId, rescheduleRequest.appointment.doctorId, rescheduleRequest.newDate, rescheduleRequest.newTime);
                 }
                 // Audit log
                 yield audit_service_1.AuditService.logUserActivity(userId, 'UPDATE_RESCHEDULE_STATUS', 'USER_ACTIVITY', `Reschedule request ${rescheduleId} ${status.toLowerCase()}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'RESCHEDULE_REQUEST', rescheduleId);

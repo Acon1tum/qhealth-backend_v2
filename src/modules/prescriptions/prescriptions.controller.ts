@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AuditService } from '../../shared/services/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 
 const prisma = new PrismaClient();
 
@@ -192,6 +193,14 @@ export class PrescriptionsController {
           patientId: patientId,
           consultationId: consultationId ? consultationId : null
         }
+      );
+
+      // Send notification to patient
+      await NotificationService.notifyPrescriptionIssued(
+        prescription.id,
+        patientId,
+        doctorId,
+        medicationName
       );
 
       res.status(201).json({

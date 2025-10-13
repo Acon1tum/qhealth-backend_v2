@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PrescriptionsController = void 0;
 const client_1 = require("@prisma/client");
 const audit_service_1 = require("../../shared/services/audit.service");
+const notification_service_1 = require("../notifications/notification.service");
 const prisma = new client_1.PrismaClient();
 class PrescriptionsController {
     // Get available patients for prescription (doctors only)
@@ -172,6 +173,8 @@ class PrescriptionsController {
                     patientId: patientId,
                     consultationId: consultationId ? consultationId : null
                 });
+                // Send notification to patient
+                yield notification_service_1.NotificationService.notifyPrescriptionIssued(prescription.id, patientId, doctorId, medicationName);
                 res.status(201).json({
                     success: true,
                     message: 'Prescription created successfully',

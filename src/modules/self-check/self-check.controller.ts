@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { Role } from '@prisma/client';
 import { AuditService } from '../../shared/services/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 
 const prisma = new PrismaClient();
 
@@ -182,6 +183,13 @@ export class SelfCheckController {
         req.get('User-Agent') || 'unknown',
         'HEALTH_SCAN',
         healthScan.id.toString()
+      );
+
+      // Send notification to patient
+      await NotificationService.notifyHealthScanCompleted(
+        consultation.id,
+        userId,
+        userId // For self-check, doctor and patient are the same
       );
 
       const responseData = {

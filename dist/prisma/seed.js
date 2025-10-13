@@ -16,6 +16,7 @@ function main() {
     return __awaiter(this, void 0, void 0, function* () {
         console.log('🌱 Starting database seeding...');
         // Clear existing data
+        yield prisma.notification.deleteMany();
         yield prisma.healthScan.deleteMany();
         yield prisma.consultation.deleteMany();
         yield prisma.doctorSchedule.deleteMany();
@@ -969,6 +970,453 @@ function main() {
             }),
         ]);
         console.log('🔬 Created health scans');
+        // Create Notifications
+        const notifications = yield Promise.all([
+            // Appointment notifications for doctors
+            prisma.notification.create({
+                data: {
+                    userId: doctors[0].id, // Dr. Smith
+                    type: client_1.NotificationType.APPOINTMENT_CREATED,
+                    title: 'New Appointment Request',
+                    message: `Emily Anderson has requested an appointment for ${appointments[0].requestedDate.toDateString()} at ${appointments[0].requestedTime}`,
+                    relatedId: appointments[0].id,
+                    relatedType: 'APPOINTMENT',
+                    actionUrl: `/doctor/appointments/${appointments[0].id}`,
+                    priority: client_1.NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: {
+                        patientName: 'Emily Anderson',
+                        reason: appointments[0].reason,
+                        appointmentDate: appointments[0].requestedDate,
+                        appointmentTime: appointments[0].requestedTime
+                    }
+                }
+            }),
+            prisma.notification.create({
+                data: {
+                    userId: doctors[0].id,
+                    type: client_1.NotificationType.APPOINTMENT_CREATED,
+                    title: 'High Priority Appointment Request',
+                    message: `David Brown has requested an urgent appointment for ${appointments[1].requestedDate.toDateString()} at ${appointments[1].requestedTime}`,
+                    relatedId: appointments[1].id,
+                    relatedType: 'APPOINTMENT',
+                    actionUrl: `/doctor/appointments/${appointments[1].id}`,
+                    priority: client_1.NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: {
+                        patientName: 'David Brown',
+                        reason: appointments[1].reason,
+                        priority: 'HIGH'
+                    }
+                }
+            }),
+            // Appointment confirmation for patient
+            prisma.notification.create({
+                data: {
+                    userId: patients[2].id, // Maria Garcia
+                    type: client_1.NotificationType.APPOINTMENT_CONFIRMED,
+                    title: 'Appointment Confirmed',
+                    message: `Your appointment with Dr. Sarah Johnson has been confirmed for ${appointments[2].requestedDate.toDateString()} at ${appointments[2].requestedTime}`,
+                    relatedId: appointments[2].id,
+                    relatedType: 'APPOINTMENT',
+                    actionUrl: `/patient/appointments/${appointments[2].id}`,
+                    priority: client_1.NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: {
+                        doctorName: 'Dr. Sarah Johnson',
+                        specialization: 'Dermatologist',
+                        appointmentDate: appointments[2].requestedDate
+                    }
+                }
+            }),
+            // Appointment request submitted for patients
+            prisma.notification.create({
+                data: {
+                    userId: patients[0].id,
+                    type: client_1.NotificationType.APPOINTMENT_CREATED,
+                    title: 'Appointment Request Submitted',
+                    message: 'Your appointment request has been submitted and is awaiting doctor approval',
+                    relatedId: appointments[0].id,
+                    relatedType: 'APPOINTMENT',
+                    actionUrl: `/patient/appointments/${appointments[0].id}`,
+                    priority: client_1.NotificationPriority.NORMAL,
+                    isRead: true,
+                    readAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // Read 2 hours ago
+                    metadata: {
+                        doctorName: 'Dr. John Smith'
+                    }
+                }
+            }),
+            // Appointment reminder
+            prisma.notification.create({
+                data: {
+                    userId: patients[2].id,
+                    type: client_1.NotificationType.APPOINTMENT_REMINDER,
+                    title: 'Upcoming Appointment Reminder',
+                    message: `You have an appointment with Dr. Sarah Johnson tomorrow at ${appointments[2].requestedTime}`,
+                    relatedId: appointments[2].id,
+                    relatedType: 'APPOINTMENT',
+                    actionUrl: `/patient/appointments/${appointments[2].id}`,
+                    priority: client_1.NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: {
+                        hoursUntilAppointment: 24,
+                        doctorName: 'Dr. Sarah Johnson'
+                    }
+                }
+            }),
+            // Lab results available
+            prisma.notification.create({
+                data: {
+                    userId: patients[1].id, // David Brown
+                    type: client_1.NotificationType.LAB_RESULTS_AVAILABLE,
+                    title: 'Lab Results Available',
+                    message: 'Your recent lab test results are now available to view',
+                    relatedType: 'LAB_REQUEST',
+                    actionUrl: '/patient/lab-requests',
+                    priority: client_1.NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: {
+                        testType: 'Complete Blood Count & Lipid Panel',
+                        completedDate: new Date()
+                    }
+                }
+            }),
+            // Prescription issued
+            prisma.notification.create({
+                data: {
+                    userId: patients[1].id,
+                    type: client_1.NotificationType.PRESCRIPTION_ISSUED,
+                    title: 'New Prescription',
+                    message: 'Dr. John Smith has issued a prescription for Metformin 500mg',
+                    relatedType: 'PRESCRIPTION',
+                    actionUrl: '/patient/prescriptions',
+                    priority: client_1.NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: {
+                        medicationName: 'Metformin 500mg',
+                        doctorName: 'Dr. John Smith',
+                        dosage: 'Take twice daily with meals'
+                    }
+                }
+            }),
+            // Diagnosis added
+            prisma.notification.create({
+                data: {
+                    userId: patients[1].id,
+                    type: client_1.NotificationType.DIAGNOSIS_ADDED,
+                    title: 'New Diagnosis Added',
+                    message: 'A new diagnosis has been added to your medical record: Type 2 Diabetes Mellitus',
+                    relatedType: 'DIAGNOSIS',
+                    actionUrl: '/patient/medical-record',
+                    priority: client_1.NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: {
+                        diagnosisName: 'Type 2 Diabetes Mellitus',
+                        doctorName: 'Dr. John Smith',
+                        severity: 'MODERATE'
+                    }
+                }
+            }),
+            // Health scan completed
+            prisma.notification.create({
+                data: {
+                    userId: patients[0].id,
+                    type: client_1.NotificationType.HEALTH_SCAN_COMPLETED,
+                    title: 'Health Scan Completed',
+                    message: 'Your health scan has been completed and results are available',
+                    relatedId: consultations[0].id,
+                    relatedType: 'CONSULTATION',
+                    actionUrl: '/patient/self-check',
+                    priority: client_1.NotificationPriority.NORMAL,
+                    isRead: true,
+                    readAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // Read 24 hours ago
+                    metadata: {
+                        generalWellness: 78.5,
+                        riskLevel: 'LOW'
+                    }
+                }
+            }),
+            // Consultation started
+            prisma.notification.create({
+                data: {
+                    userId: patients[2].id,
+                    type: client_1.NotificationType.CONSULTATION_STARTED,
+                    title: 'Consultation Starting Soon',
+                    message: 'Your consultation with Dr. Michael Williams will start in 10 minutes',
+                    relatedId: consultations[2].id,
+                    relatedType: 'CONSULTATION',
+                    actionUrl: '/patient/meet',
+                    priority: client_1.NotificationPriority.URGENT,
+                    isRead: false,
+                    metadata: {
+                        doctorName: 'Dr. Michael Williams',
+                        consultationCode: consultations[2].consultationCode
+                    }
+                }
+            }),
+            // Medical record shared with doctor
+            prisma.notification.create({
+                data: {
+                    userId: doctors[1].id, // Dr. Johnson
+                    type: client_1.NotificationType.MEDICAL_RECORD_SHARED,
+                    title: 'Medical Record Shared',
+                    message: 'Emily Anderson has shared their medical history with you',
+                    relatedType: 'MEDICAL_RECORD',
+                    actionUrl: `/doctor/patient-records/${patients[0].id}`,
+                    priority: client_1.NotificationPriority.NORMAL,
+                    isRead: false,
+                    metadata: {
+                        patientName: 'Emily Anderson',
+                        recordType: 'Complete Medical History'
+                    }
+                }
+            }),
+            // Document verified
+            prisma.notification.create({
+                data: {
+                    userId: doctors[0].id,
+                    type: client_1.NotificationType.DOCUMENT_VERIFIED,
+                    title: 'Documents Verified',
+                    message: 'Your PRC ID and medical license have been successfully verified',
+                    relatedType: 'DOCUMENT',
+                    actionUrl: '/doctor/my-profile',
+                    priority: client_1.NotificationPriority.HIGH,
+                    isRead: true,
+                    readAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Read 7 days ago
+                    metadata: {
+                        documentTypes: ['PRC ID', 'Medical License'],
+                        verifiedBy: 'Admin'
+                    }
+                }
+            }),
+            // System announcement to all doctors
+            prisma.notification.create({
+                data: {
+                    userId: doctors[0].id,
+                    type: client_1.NotificationType.SYSTEM_ANNOUNCEMENT,
+                    title: 'System Maintenance Notice',
+                    message: 'The system will undergo scheduled maintenance on Sunday, 10 PM to 2 AM. Please save your work.',
+                    relatedType: 'SYSTEM',
+                    priority: client_1.NotificationPriority.NORMAL,
+                    isRead: false,
+                    metadata: {
+                        maintenanceDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+                        duration: '4 hours',
+                        affectedServices: ['Video consultations', 'File uploads']
+                    }
+                }
+            }),
+            prisma.notification.create({
+                data: {
+                    userId: doctors[1].id,
+                    type: client_1.NotificationType.SYSTEM_ANNOUNCEMENT,
+                    title: 'System Maintenance Notice',
+                    message: 'The system will undergo scheduled maintenance on Sunday, 10 PM to 2 AM. Please save your work.',
+                    relatedType: 'SYSTEM',
+                    priority: client_1.NotificationPriority.NORMAL,
+                    isRead: false,
+                    metadata: {
+                        maintenanceDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+                    }
+                }
+            }),
+            // System announcement to patients
+            prisma.notification.create({
+                data: {
+                    userId: patients[0].id,
+                    type: client_1.NotificationType.SYSTEM_ANNOUNCEMENT,
+                    title: 'New Feature Available',
+                    message: 'You can now share your health scan results directly with your doctors!',
+                    relatedType: 'SYSTEM',
+                    priority: client_1.NotificationPriority.LOW,
+                    isRead: false,
+                    metadata: {
+                        featureName: 'Health Scan Sharing',
+                        releaseDate: new Date()
+                    }
+                }
+            }),
+            // Lab request created
+            prisma.notification.create({
+                data: {
+                    userId: patients[1].id,
+                    type: client_1.NotificationType.LAB_REQUEST_CREATED,
+                    title: 'New Lab Request',
+                    message: 'Dr. John Smith has created a laboratory test request for you',
+                    relatedType: 'LAB_REQUEST',
+                    actionUrl: '/patient/lab-requests',
+                    priority: client_1.NotificationPriority.NORMAL,
+                    isRead: false,
+                    metadata: {
+                        doctorName: 'Dr. John Smith',
+                        requestedTests: ['HbA1c', 'Fasting Blood Sugar', 'Lipid Panel']
+                    }
+                }
+            }),
+            // Profile update confirmation
+            prisma.notification.create({
+                data: {
+                    userId: patients[2].id,
+                    type: client_1.NotificationType.PROFILE_UPDATE,
+                    title: 'Profile Updated',
+                    message: 'Your profile information has been successfully updated',
+                    relatedType: 'USER_PROFILE',
+                    actionUrl: '/patient/my-profile',
+                    priority: client_1.NotificationPriority.NORMAL,
+                    isRead: true,
+                    readAt: new Date(Date.now() - 3 * 60 * 60 * 1000), // Read 3 hours ago
+                    metadata: {
+                        updatedFields: ['contactNumber', 'address'],
+                        updatedAt: new Date()
+                    }
+                }
+            }),
+            // Prescription expiring soon
+            prisma.notification.create({
+                data: {
+                    userId: patients[1].id,
+                    type: client_1.NotificationType.PRESCRIPTION_EXPIRING,
+                    title: 'Prescription Expiring Soon',
+                    message: 'Your prescription for Lisinopril will expire in 7 days. Please schedule a follow-up appointment.',
+                    relatedType: 'PRESCRIPTION',
+                    actionUrl: '/patient/prescriptions',
+                    priority: client_1.NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: {
+                        medicationName: 'Lisinopril',
+                        expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                        daysRemaining: 7
+                    }
+                }
+            }),
+            // Reschedule request
+            prisma.notification.create({
+                data: {
+                    userId: patients[0].id,
+                    type: client_1.NotificationType.RESCHEDULE_REQUEST,
+                    title: 'Reschedule Request',
+                    message: 'Dr. John Smith has requested to reschedule your appointment to a different time',
+                    relatedId: appointments[0].id,
+                    relatedType: 'RESCHEDULE',
+                    actionUrl: `/patient/appointments/${appointments[0].id}`,
+                    priority: client_1.NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: {
+                        doctorName: 'Dr. John Smith',
+                        currentDate: appointments[0].requestedDate,
+                        newProposedDate: new Date(appointments[0].requestedDate.getTime() + 24 * 60 * 60 * 1000),
+                        reason: 'Emergency procedure scheduled'
+                    }
+                }
+            }),
+            // Security alert
+            prisma.notification.create({
+                data: {
+                    userId: patients[0].id,
+                    type: client_1.NotificationType.SECURITY_ALERT,
+                    title: 'New Login Detected',
+                    message: 'A new login to your account was detected from Chrome on Windows',
+                    relatedType: 'SECURITY',
+                    priority: client_1.NotificationPriority.HIGH,
+                    isRead: false,
+                    metadata: {
+                        loginTime: new Date(),
+                        ipAddress: '192.168.1.100',
+                        device: 'Chrome on Windows 10',
+                        location: 'Manila, Philippines'
+                    }
+                }
+            }),
+            // Health scan shared with doctor
+            prisma.notification.create({
+                data: {
+                    userId: doctors[2].id, // Dr. Williams
+                    type: client_1.NotificationType.HEALTH_SCAN_SHARED,
+                    title: 'Health Scan Shared',
+                    message: 'Maria Garcia has shared their health scan results with you',
+                    relatedId: consultations[2].id,
+                    relatedType: 'HEALTH_SCAN',
+                    actionUrl: `/doctor/patient-records/${patients[2].id}`,
+                    priority: client_1.NotificationPriority.NORMAL,
+                    isRead: false,
+                    metadata: {
+                        patientName: 'Maria Garcia',
+                        scanDate: consultations[2].startTime,
+                        generalWellness: 82.1
+                    }
+                }
+            }),
+            // Additional old read notifications for variety
+            prisma.notification.create({
+                data: {
+                    userId: patients[0].id,
+                    type: client_1.NotificationType.APPOINTMENT_CONFIRMED,
+                    title: 'Appointment Confirmed',
+                    message: 'Your appointment with Dr. John Smith has been confirmed',
+                    relatedType: 'APPOINTMENT',
+                    priority: client_1.NotificationPriority.NORMAL,
+                    isRead: true,
+                    readAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // Read 5 days ago
+                    createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
+                    metadata: {
+                        doctorName: 'Dr. John Smith'
+                    }
+                }
+            }),
+            prisma.notification.create({
+                data: {
+                    userId: doctors[0].id,
+                    type: client_1.NotificationType.APPOINTMENT_CANCELLED,
+                    title: 'Appointment Cancelled',
+                    message: 'A patient has cancelled their appointment',
+                    relatedType: 'APPOINTMENT',
+                    priority: client_1.NotificationPriority.NORMAL,
+                    isRead: true,
+                    readAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000), // Read 10 days ago
+                    createdAt: new Date(Date.now() - 11 * 24 * 60 * 60 * 1000),
+                    metadata: {
+                        reason: 'Patient conflict'
+                    }
+                }
+            }),
+            prisma.notification.create({
+                data: {
+                    userId: patients[1].id,
+                    type: client_1.NotificationType.CONSULTATION_ENDED,
+                    title: 'Consultation Completed',
+                    message: 'Your consultation with Dr. Sarah Johnson has been completed',
+                    relatedId: consultations[1].id,
+                    relatedType: 'CONSULTATION',
+                    priority: client_1.NotificationPriority.NORMAL,
+                    isRead: true,
+                    readAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
+                    createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
+                    metadata: {
+                        doctorName: 'Dr. Sarah Johnson',
+                        duration: '45 minutes'
+                    }
+                }
+            }),
+            // Archived notifications
+            prisma.notification.create({
+                data: {
+                    userId: patients[0].id,
+                    type: client_1.NotificationType.GENERAL,
+                    title: 'Welcome to QHealth',
+                    message: 'Thank you for choosing QHealth for your healthcare needs',
+                    priority: client_1.NotificationPriority.LOW,
+                    isRead: true,
+                    isArchived: true,
+                    readAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+                    createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+                    metadata: {
+                        welcomeBonus: 'First consultation discount available'
+                    }
+                }
+            })
+        ]);
+        console.log(`🔔 Created ${notifications.length} notifications`);
         console.log('✅ Database seeding completed successfully!');
         console.log('\n📊 Summary of created data:');
         console.log(`   - Organizations: ${organizations.length}`);
@@ -982,6 +1430,7 @@ function main() {
         console.log(`   - Doctor schedules: ${scheduleData.length}`);
         console.log(`   - Consultations: ${consultations.length + additionalConsultations.length}`);
         console.log(`   - Health scans: ${healthScans.length + additionalHealthScans.length}`);
+        console.log(`   - Notifications: ${notifications.length}`);
         console.log('\n🔐 Login Credentials:');
         console.log(`   - Super Admin: superadmin@qhealth.com / superadmin123`);
         console.log(`   - Admin (Quanby): admin@quanbyhealthcare.com / admin123`);

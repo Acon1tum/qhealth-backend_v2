@@ -13,6 +13,7 @@ exports.SelfCheckController = void 0;
 const client_1 = require("@prisma/client");
 const client_2 = require("@prisma/client");
 const audit_service_1 = require("../../shared/services/audit.service");
+const notification_service_1 = require("../notifications/notification.service");
 const prisma = new client_1.PrismaClient();
 class SelfCheckController {
     // Test database connection
@@ -169,6 +170,9 @@ class SelfCheckController {
                 });
                 // Audit log
                 yield audit_service_1.AuditService.logUserActivity(userId, 'SAVE_SELF_CHECK_RESULTS', 'DATA_MODIFICATION', `Self-check health scan results saved for user ${userId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'HEALTH_SCAN', healthScan.id.toString());
+                // Send notification to patient
+                yield notification_service_1.NotificationService.notifyHealthScanCompleted(consultation.id, userId, userId // For self-check, doctor and patient are the same
+                );
                 const responseData = {
                     success: true,
                     message: 'Self-check results saved successfully',

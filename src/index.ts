@@ -27,6 +27,9 @@ import { organizationsRoutes } from './modules/organizations/organizations.route
 import { doctorsRoutes } from './modules/doctors/doctors.routes';
 import { patientsRoutes } from './modules/patients/patients.routes';
 import labRequestsRoutes from './modules/lab-requests/lab-requests.routes';
+import { notificationsRoutes } from './modules/notifications/notifications.routes';
+import { setSocketIOInstance } from './modules/notifications/notification.service';
+import { setIOInstance } from './modules/notifications/notifications.controller';
 
 // Import middleware
 import { errorHandler, notFoundHandler } from './shared/middleware/error-handler';
@@ -190,6 +193,7 @@ app.use('/api/organizations', organizationsRoutes);
 app.use('/api/doctors', doctorsRoutes);
 app.use('/api/patients', patientsRoutes);
 app.use('/api/lab-requests', labRequestsRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // Serve static files with enhanced security
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
@@ -235,6 +239,10 @@ const getRoomSize = (roomId: string): number => {
 // Track roles per room: ensures exactly one doctor and one patient
 const roomRoles = new Map<string, { doctor?: string; patient?: string }>();
 
+// Set Socket.IO instance for notification service and controller
+setSocketIOInstance(io);
+setIOInstance(io);
+
 // Validate JWT from Socket.IO handshake and attach user info
 io.use((socket, next) => {
   console.log('🔐 Socket.IO handshake attempt from:', socket.handshake.address);
@@ -256,7 +264,7 @@ io.use((socket, next) => {
     console.log('🔑 Cleaned token preview:', `${token.substring(0, 20)}...`);
     
     // Verify JWT token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: number; role: Role };
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string; role: Role };
     console.log('✅ JWT verified for user:', decoded.userId, 'role:', decoded.role);
     
     socket.data.userId = decoded.userId;
@@ -275,6 +283,16 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
+  console.log('🔌 Socket.IO client connected:', socket.id);
+  
+  // Auto-join user to their personal notification room
+  const userId = socket.data.userId;
+  if (userId) {
+    const userRoom = `user:${userId}`;
+    socket.join(userRoom);
+    console.log(`📬 User ${userId} joined notification room: ${userRoom}`);
+  }
+  
   // Join room (limit 2 participants)
   socket.on('webrtc:join', (payload: JoinPayload, ack?: Function) => {
     console.log('🚪 Join request from socket:', socket.id, 'payload:', payload);
@@ -354,6 +372,8 @@ io.on('connection', (socket) => {
 
   // Cleanup on disconnect
   socket.on('disconnect', () => {
+    console.log('🔌 Socket.IO client disconnected:', socket.id);
+    
     const roomId: string | undefined = socket.data?.roomId;
     if (roomId) {
       const roles = roomRoles.get(roomId);

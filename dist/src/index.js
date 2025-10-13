@@ -62,6 +62,9 @@ const organizations_routes_1 = require("./modules/organizations/organizations.ro
 const doctors_routes_1 = require("./modules/doctors/doctors.routes");
 const patients_routes_1 = require("./modules/patients/patients.routes");
 const lab_requests_routes_1 = __importDefault(require("./modules/lab-requests/lab-requests.routes"));
+const notifications_routes_1 = require("./modules/notifications/notifications.routes");
+const notification_service_1 = require("./modules/notifications/notification.service");
+const notifications_controller_1 = require("./modules/notifications/notifications.controller");
 // Import middleware
 const error_handler_1 = require("./shared/middleware/error-handler");
 const validation_1 = require("./utils/validation");
@@ -209,6 +212,7 @@ app.use('/api/organizations', organizations_routes_1.organizationsRoutes);
 app.use('/api/doctors', doctors_routes_1.doctorsRoutes);
 app.use('/api/patients', patients_routes_1.patientsRoutes);
 app.use('/api/lab-requests', lab_requests_routes_1.default);
+app.use('/api/notifications', notifications_routes_1.notificationsRoutes);
 // Serve static files with enhanced security
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads'), {
     setHeaders: (res, filePath) => {
@@ -242,6 +246,9 @@ const getRoomSize = (roomId) => {
 };
 // Track roles per room: ensures exactly one doctor and one patient
 const roomRoles = new Map();
+// Set Socket.IO instance for notification service and controller
+(0, notification_service_1.setSocketIOInstance)(io);
+(0, notifications_controller_1.setIOInstance)(io);
 // Validate JWT from Socket.IO handshake and attach user info
 io.use((socket, next) => {
     var _a;
@@ -277,6 +284,14 @@ io.use((socket, next) => {
     }
 });
 io.on('connection', (socket) => {
+    console.log('🔌 Socket.IO client connected:', socket.id);
+    // Auto-join user to their personal notification room
+    const userId = socket.data.userId;
+    if (userId) {
+        const userRoom = `user:${userId}`;
+        socket.join(userRoom);
+        console.log(`📬 User ${userId} joined notification room: ${userRoom}`);
+    }
     // Join room (limit 2 participants)
     socket.on('webrtc:join', (payload, ack) => {
         var _a;
@@ -369,6 +384,7 @@ io.on('connection', (socket) => {
     // Cleanup on disconnect
     socket.on('disconnect', () => {
         var _a;
+        console.log('🔌 Socket.IO client disconnected:', socket.id);
         const roomId = (_a = socket.data) === null || _a === void 0 ? void 0 : _a.roomId;
         if (roomId) {
             const roles = roomRoles.get(roomId);

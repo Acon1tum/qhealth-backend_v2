@@ -14,6 +14,7 @@ const client_1 = require("@prisma/client");
 const lab_requests_service_js_1 = require("./lab-requests.service.js");
 const auth_service_1 = require("../../shared/services/auth.service");
 const audit_service_1 = require("../../shared/services/audit.service");
+const notification_service_1 = require("../notifications/notification.service");
 const prisma = new client_1.PrismaClient();
 const labRequestService = new lab_requests_service_js_1.LabRequestService();
 const authService = new auth_service_1.AuthService();
@@ -174,6 +175,8 @@ class LabRequestsController {
                     console.error('⚠️ Failed to create audit log:', auditError);
                     // Don't fail the request if audit logging fails
                 }
+                // Send notification to patient
+                yield notification_service_1.NotificationService.notifyLabRequestCreated(labRequest.id, patientId, doctorId);
                 res.status(201).json({
                     success: true,
                     message: 'Lab request created successfully',
@@ -254,6 +257,10 @@ class LabRequestsController {
                 const labRequest = yield labRequestService.updateLabRequest(id, updateData);
                 // Log audit event
                 yield audit_service_1.AuditService.logUserActivity(userId, 'UPDATE_LAB_REQUEST_STATUS', 'DATA_MODIFICATION', `Updated lab request ${id} status to ${status}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'LAB_REQUEST', id, { status, notes });
+                // Send notification when lab results are available
+                if (status === 'COMPLETED') {
+                    yield notification_service_1.NotificationService.notifyLabResultsAvailable(id, labRequest.patientId, labRequest.doctorId);
+                }
                 res.json({
                     success: true,
                     message: `Lab request ${status.toLowerCase()} successfully`,

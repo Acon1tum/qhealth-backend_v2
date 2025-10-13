@@ -13,6 +13,7 @@ exports.DiagnosesController = void 0;
 const client_1 = require("@prisma/client");
 const client_2 = require("@prisma/client");
 const audit_service_1 = require("../../shared/services/audit.service");
+const notification_service_1 = require("../notifications/notification.service");
 const prisma = new client_1.PrismaClient();
 class DiagnosesController {
     // Create a new diagnosis
@@ -97,6 +98,8 @@ class DiagnosesController {
                 });
                 // Audit log
                 yield audit_service_1.AuditService.logUserActivity(doctorId, 'CREATE_DIAGNOSIS', 'DATA_MODIFICATION', `Diagnosis created for patient ${(_a = diagnosis.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName}: ${diagnosisName}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'DIAGNOSIS', diagnosis.id.toString());
+                // Send notification to patient
+                yield notification_service_1.NotificationService.notifyDiagnosisAdded(diagnosis.id, patientId, doctorId, diagnosisName);
                 res.status(201).json({
                     success: true,
                     message: 'Diagnosis created successfully',

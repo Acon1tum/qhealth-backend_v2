@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AppointmentStatus, RescheduleStatus, Role } from '@prisma/client';
 import { AuditService } from '../../shared/services/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 
 const prisma = new PrismaClient();
 
@@ -126,6 +127,15 @@ export class AppointmentsController {
         req.get('User-Agent') || 'unknown',
         'APPOINTMENT_REQUEST',
         appointment.id.toString()
+      );
+
+      // Send notifications
+      await NotificationService.notifyAppointmentCreated(
+        appointment.id,
+        doctorId,
+        patientId,
+        parsedDate,
+        requestedTime
       );
 
       res.status(201).json({
@@ -438,6 +448,24 @@ export class AppointmentsController {
         appointmentId
       );
 
+      // Send notifications
+      if (status === AppointmentStatus.CONFIRMED) {
+        await NotificationService.notifyAppointmentConfirmed(
+          appointmentId,
+          updatedAppointment.patientId,
+          updatedAppointment.doctorId,
+          updatedAppointment.requestedDate,
+          updatedAppointment.requestedTime
+        );
+      } else if (status === AppointmentStatus.REJECTED) {
+        await NotificationService.notifyAppointmentRejected(
+          appointmentId,
+          updatedAppointment.patientId,
+          updatedAppointment.doctorId,
+          notes || 'Your appointment request has been declined'
+        );
+      }
+
       res.json({
         success: true,
         message: `Appointment ${status.toLowerCase()} successfully`,
@@ -516,6 +544,17 @@ export class AppointmentsController {
         rescheduleRequest.id.toString()
       );
 
+      // Send notification to the other party
+      const recipientId = userRole === Role.PATIENT ? appointment.doctorId : appointment.patientId;
+      await NotificationService.notifyRescheduleRequest(
+        rescheduleRequest.id,
+        recipientId,
+        appointment.requestedDate,
+        appointment.requestedTime,
+        newDate,
+        newTime
+      );
+
       res.status(201).json({
         success: true,
         message: 'Reschedule request created successfully',
@@ -582,6 +621,20 @@ export class AppointmentsController {
             updatedAt: new Date()
           }
         });
+
+        // Notify both parties about rescheduling
+        await NotificationService.notifyAppointmentRescheduled(
+          rescheduleRequest.appointmentId,
+          rescheduleRequest.appointment.patientId,
+          rescheduleRequest.newDate,
+          rescheduleRequest.newTime
+        );
+        await NotificationService.notifyAppointmentRescheduled(
+          rescheduleRequest.appointmentId,
+          rescheduleRequest.appointment.doctorId,
+          rescheduleRequest.newDate,
+          rescheduleRequest.newTime
+        );
       }
 
       // Audit log

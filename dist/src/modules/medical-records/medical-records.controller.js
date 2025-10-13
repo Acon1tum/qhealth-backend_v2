@@ -13,6 +13,7 @@ exports.MedicalRecordsController = void 0;
 const client_1 = require("@prisma/client");
 const client_2 = require("@prisma/client");
 const audit_service_1 = require("../../shared/services/audit.service");
+const notification_service_1 = require("../notifications/notification.service");
 const prisma = new client_1.PrismaClient();
 class MedicalRecordsController {
     // Create medical record
@@ -470,6 +471,8 @@ class MedicalRecordsController {
                 });
                 // Audit log
                 yield audit_service_1.AuditService.logUserActivity(userId, 'SHARE_MEDICAL_RECORD', 'DATA_ACCESS', `Medical record ${recordId} shared with doctor ${doctorId}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'MEDICAL_RECORD', recordId);
+                // Send notification to doctor
+                yield notification_service_1.NotificationService.notifyMedicalRecordShared(recordId, doctorId, medicalRecord.patientId, medicalRecord.recordType);
                 res.status(201).json({
                     success: true,
                     message: 'Medical record shared successfully',

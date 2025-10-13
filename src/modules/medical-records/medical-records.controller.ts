@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { MedicalRecordType, PrivacySettingType, AccessLevel, Role } from '@prisma/client';
 import { AuditService } from '../../shared/services/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 
 const prisma = new PrismaClient();
 
@@ -541,6 +542,14 @@ export class MedicalRecordsController {
         req.get('User-Agent') || 'unknown',
         'MEDICAL_RECORD',
         recordId
+      );
+
+      // Send notification to doctor
+      await NotificationService.notifyMedicalRecordShared(
+        recordId,
+        doctorId,
+        medicalRecord.patientId,
+        medicalRecord.recordType
       );
 
       res.status(201).json({

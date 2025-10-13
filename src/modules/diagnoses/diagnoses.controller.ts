@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { Role, DiagnosisSeverity, DiagnosisStatus } from '@prisma/client';
 import { AuditService } from '../../shared/services/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 
 const prisma = new PrismaClient();
 
@@ -114,6 +115,14 @@ export class DiagnosesController {
         req.get('User-Agent') || 'unknown',
         'DIAGNOSIS',
         diagnosis.id.toString()
+      );
+
+      // Send notification to patient
+      await NotificationService.notifyDiagnosisAdded(
+        diagnosis.id,
+        patientId,
+        doctorId,
+        diagnosisName
       );
 
       res.status(201).json({

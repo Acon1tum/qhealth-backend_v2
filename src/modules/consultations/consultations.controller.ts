@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { Role, AccessLevel, PrivacySettingType } from '@prisma/client';
 import { AuditService } from '../../shared/services/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 
 const prisma = new PrismaClient();
 
@@ -85,6 +86,13 @@ export class ConsultationsController {
         req.get('User-Agent') || 'unknown',
         'CONSULTATION',
         consultation.id.toString()
+      );
+
+      // Send notification to patient
+      await NotificationService.notifyConsultationStarted(
+        consultation.id,
+        consultation.patientId,
+        consultation.doctorId
       );
 
       res.status(201).json({

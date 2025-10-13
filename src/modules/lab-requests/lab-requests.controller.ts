@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { LabRequestService } from './lab-requests.service.js';
 import { AuthService } from '../../shared/services/auth.service';
 import { AuditService } from '../../shared/services/audit.service';
+import { NotificationService } from '../notifications/notification.service';
 
 const prisma = new PrismaClient();
 const labRequestService = new LabRequestService();
@@ -192,6 +193,13 @@ export class LabRequestsController {
         // Don't fail the request if audit logging fails
       }
 
+      // Send notification to patient
+      await NotificationService.notifyLabRequestCreated(
+        labRequest.id,
+        patientId,
+        doctorId
+      );
+
       res.status(201).json({
         success: true,
         message: 'Lab request created successfully',
@@ -296,6 +304,15 @@ export class LabRequestsController {
         id,
         { status, notes }
       );
+
+      // Send notification when lab results are available
+      if (status === 'COMPLETED') {
+        await NotificationService.notifyLabResultsAvailable(
+          id,
+          labRequest.patientId,
+          labRequest.doctorId
+        );
+      }
 
       res.json({
         success: true,

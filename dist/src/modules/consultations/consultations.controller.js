@@ -13,6 +13,7 @@ exports.ConsultationsController = void 0;
 const client_1 = require("@prisma/client");
 const client_2 = require("@prisma/client");
 const audit_service_1 = require("../../shared/services/audit.service");
+const notification_service_1 = require("../notifications/notification.service");
 const prisma = new client_1.PrismaClient();
 class ConsultationsController {
     // Create consultation from appointment
@@ -81,6 +82,8 @@ class ConsultationsController {
                 });
                 // Audit log
                 yield audit_service_1.AuditService.logUserActivity(userId, 'CREATE_CONSULTATION', 'DATA_MODIFICATION', `Consultation created for patient ${(_a = consultation.patient.patientInfo) === null || _a === void 0 ? void 0 : _a.fullName}`, req.ip || 'unknown', req.get('User-Agent') || 'unknown', 'CONSULTATION', consultation.id.toString());
+                // Send notification to patient
+                yield notification_service_1.NotificationService.notifyConsultationStarted(consultation.id, consultation.patientId, consultation.doctorId);
                 res.status(201).json({
                     success: true,
                     message: 'Consultation created successfully',

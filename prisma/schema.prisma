@@ -89,6 +89,9 @@ model User {
   createdLabRequests     LabRequest[] @relation("CreatedLabRequests") // Lab requests created by this user
   updatedLabRequests     LabRequest[] @relation("UpdatedLabRequests") // Lab requests updated by this user
   
+  // Notification relations
+  notifications          Notification[] @relation("UserNotifications") // Notifications for this user
+  
   @@index([profilePictureVerified])
   @@index([profilePictureVerifiedBy])
 }
@@ -770,4 +773,71 @@ enum LabRequestStatus {
   CANCELLED   // Request was cancelled
   REJECTED    // Request was rejected by lab
   ON_HOLD     // Request is on hold
+}
+
+// Notification model for tracking all system notifications
+model Notification {
+  id             String           @id @default(uuid()) // Primary key, UUID
+  userId         String           // User who will receive this notification
+  type           NotificationType // Type of notification
+  title          String           // Notification title
+  message        String           // Notification message
+  relatedId      String?          // ID of related entity (e.g., appointmentId, prescriptionId)
+  relatedType    String?          // Type of related entity (e.g., APPOINTMENT, PRESCRIPTION)
+  actionUrl      String?          // URL to navigate when notification is clicked
+  isRead         Boolean          @default(false) // Whether the notification has been read
+  isArchived     Boolean          @default(false) // Whether the notification is archived
+  priority       NotificationPriority @default(NORMAL) // Priority level
+  metadata       Json?            // Additional metadata in JSON format
+  readAt         DateTime?        // When the notification was read
+  createdAt      DateTime         @default(now()) // When notification was created
+  updatedAt      DateTime         @updatedAt // When notification was last updated
+  expiresAt      DateTime?        // When the notification expires (optional)
+  
+  user User @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([isRead])
+  @@index([isArchived])
+  @@index([type])
+  @@index([priority])
+  @@index([createdAt])
+  @@index([userId, isRead]) // Composite index for common queries
+}
+
+// Notification Type enum
+enum NotificationType {
+  APPOINTMENT_CREATED         // New appointment request created
+  APPOINTMENT_CONFIRMED       // Appointment confirmed by doctor
+  APPOINTMENT_CANCELLED       // Appointment cancelled
+  APPOINTMENT_REJECTED        // Appointment rejected by doctor
+  APPOINTMENT_RESCHEDULED     // Appointment rescheduled
+  APPOINTMENT_REMINDER        // Reminder for upcoming appointment
+  CONSULTATION_STARTED        // Consultation has started
+  CONSULTATION_ENDED          // Consultation has ended
+  PRESCRIPTION_ISSUED         // New prescription issued
+  PRESCRIPTION_EXPIRING       // Prescription expiring soon
+  DIAGNOSIS_ADDED             // New diagnosis added
+  LAB_REQUEST_CREATED         // New lab request created
+  LAB_RESULTS_AVAILABLE       // Lab results are ready
+  MEDICAL_RECORD_SHARED       // Medical record shared with you
+  HEALTH_SCAN_COMPLETED       // Health scan completed
+  HEALTH_SCAN_SHARED          // Health scan shared with you
+  RESCHEDULE_REQUEST          // Reschedule request received
+  RESCHEDULE_APPROVED         // Reschedule request approved
+  RESCHEDULE_REJECTED         // Reschedule request rejected
+  SYSTEM_ANNOUNCEMENT         // System-wide announcement
+  SECURITY_ALERT              // Security-related alert
+  PROFILE_UPDATE              // Profile information updated
+  DOCUMENT_VERIFIED           // Document verification completed
+  DOCUMENT_REJECTED           // Document verification rejected
+  GENERAL                     // General notification
+}
+
+// Notification Priority enum
+enum NotificationPriority {
+  LOW     // Low priority notification
+  NORMAL  // Normal priority notification
+  HIGH    // High priority notification
+  URGENT  // Urgent notification requiring immediate attention
 }
