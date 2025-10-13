@@ -28,6 +28,7 @@ import { doctorsRoutes } from './modules/doctors/doctors.routes';
 import { patientsRoutes } from './modules/patients/patients.routes';
 import labRequestsRoutes from './modules/lab-requests/lab-requests.routes';
 import { notificationsRoutes } from './modules/notifications/notifications.routes';
+import { superAdminRoutes } from './modules/super-admin/super-admin.routes';
 import { setSocketIOInstance } from './modules/notifications/notification.service';
 import { setIOInstance } from './modules/notifications/notifications.controller';
 
@@ -194,6 +195,7 @@ app.use('/api/doctors', doctorsRoutes);
 app.use('/api/patients', patientsRoutes);
 app.use('/api/lab-requests', labRequestsRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/super-admin', superAdminRoutes);
 
 // Serve static files with enhanced security
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {

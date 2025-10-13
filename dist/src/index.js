@@ -63,6 +63,7 @@ const doctors_routes_1 = require("./modules/doctors/doctors.routes");
 const patients_routes_1 = require("./modules/patients/patients.routes");
 const lab_requests_routes_1 = __importDefault(require("./modules/lab-requests/lab-requests.routes"));
 const notifications_routes_1 = require("./modules/notifications/notifications.routes");
+const super_admin_routes_1 = require("./modules/super-admin/super-admin.routes");
 const notification_service_1 = require("./modules/notifications/notification.service");
 const notifications_controller_1 = require("./modules/notifications/notifications.controller");
 // Import middleware
@@ -213,6 +214,7 @@ app.use('/api/doctors', doctors_routes_1.doctorsRoutes);
 app.use('/api/patients', patients_routes_1.patientsRoutes);
 app.use('/api/lab-requests', lab_requests_routes_1.default);
 app.use('/api/notifications', notifications_routes_1.notificationsRoutes);
+app.use('/api/super-admin', super_admin_routes_1.superAdminRoutes);
 // Serve static files with enhanced security
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads'), {
     setHeaders: (res, filePath) => {
